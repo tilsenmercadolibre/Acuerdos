@@ -55,7 +55,7 @@ export default function Reportes({ onNavigate }: { onNavigate?: (tab: any) => vo
     try {
       const { data, error } = await supabase
         .from('contratos')
-        .select('*, cliente:clientes(*), contrato_aportes(*, articulo:articulos(*)), contrato_descuentos(*, articulo:articulos(*))');
+        .select('*, cliente:clientes(*), contrato_aportes(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*)), contrato_descuentos(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*))');
       
       if (error) throw error;
       setContracts(data || []);
@@ -197,12 +197,26 @@ export default function Reportes({ onNavigate }: { onNavigate?: (tab: any) => vo
   const itemUsage: Record<string, { code: string; name: string; quantity: number }> = {};
   filteredContracts.forEach(c => {
     c.contrato_aportes?.forEach((ap: any) => {
-      const art = ap.articulo;
-      if (!art) return;
-      if (!itemUsage[art.id]) {
-        itemUsage[art.id] = { code: art.codigo, name: art.nombre, quantity: 0 };
+      const isCustom = !ap.articulo;
+      const id = isCustom 
+        ? `custom-${ap.marca_id || ''}-${ap.linea_id || ''}-${ap.calibre_id || ''}`
+        : ap.articulo.id;
+      
+      if (!itemUsage[id]) {
+        const code = ap.articulo?.codigo || ap.codigo_interno || '-';
+        let name = '';
+        if (ap.articulo) {
+          name = ap.articulo.nombre;
+        } else {
+          const parts: string[] = [];
+          if (ap.marca?.nombre) parts.push(ap.marca.nombre);
+          if (ap.linea?.nombre) parts.push(ap.linea.nombre);
+          if (ap.calibre?.nombre) parts.push(ap.calibre.nombre);
+          name = parts.join(' · ') || 'Combinación a medida';
+        }
+        itemUsage[id] = { code, name, quantity: 0 };
       }
-      itemUsage[art.id].quantity += ap.cantidad || 0;
+      itemUsage[id].quantity += ap.cantidad || 0;
     });
   });
   const sortedUsage = Object.entries(itemUsage)
@@ -217,6 +231,108 @@ export default function Reportes({ onNavigate }: { onNavigate?: (tab: any) => vo
     percentage: `${Math.round((item.quantity / maxQty) * 100)}%`
   }));
 
+  const downloadCSV = (headers: string[], rows: any[][], filename: string) => {
+    const csvContent = "\uFEFF" 
+      + [headers.join(';'), ...rows.map(row => row.map(val => {
+        const stringVal = val === null || val === undefined ? '' : String(val);
+        if (stringVal.includes(';') || stringVal.includes('"') || stringVal.includes('\n')) {
+          return `"${stringVal.replace(/"/g, '""')}"`;
+        }
+        return stringVal;
+      }).join(';'))].join('\r\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportAllToExcel = () => {
+    const headers = [
+      'Código de Acuerdo',
+      'Cliente',
+      'Email Cliente',
+      'Vendedor',
+      'Organización',
+      'Tipo de Acuerdo',
+      'Fecha Inicio',
+      'Fecha Vencimiento',
+      'Estado',
+      'Valor Estimado (Mensual)'
+    ];
+
+    const rows = filteredContracts.map(c => {
+      let cAmount = 0;
+      c.contrato_aportes?.forEach((ap: any) => {
+        const discObj = c.contrato_descuentos?.find((d: any) => d.articulo_id === ap.articulo_id);
+        const discount = discObj ? parseFloat(discObj.descuento) : 0;
+        cAmount += ap.cantidad * getArticlePrice(ap.articulo) * (1 - discount / 100);
+      });
+
+      return [
+        c.numero_acuerdo || `AC-${String(c.id).slice(0, 6).toUpperCase()}`,
+        c.cliente?.nombre || 'Sin Cliente',
+        c.cliente?.email || '',
+        c.creador || 'Sin Creador',
+        c.organizacion,
+        c.tipo || 'General',
+        c.fecha_inicio ? new Date(c.fecha_inicio).toLocaleDateString() : 'N/A',
+        c.fecha_vencimiento ? new Date(c.fecha_vencimiento).toLocaleDateString() : 'Indefinido',
+        c.estado || 'PENDIENTE_REVISION',
+        cAmount
+      ];
+    });
+
+    downloadCSV(headers, rows, `Reporte_Acuerdos_${filterOrg}_${new Date().toISOString().slice(0,10)}.csv`);
+  };
+
+  const exportCriticalToExcel = () => {
+    const headers = [
+      'Cliente',
+      'Creador',
+      'Tipo de Acuerdo',
+      'Fecha Vencimiento',
+      'Estado',
+      'Días Restantes',
+      'Valor Estimado (Mensual)'
+    ];
+
+    const rows = criticalContracts.map(c => [
+      c.company,
+      c.client,
+      c.type,
+      c.date,
+      c.status,
+      c.daysLeft === Infinity ? 'Indefinido' : c.daysLeft,
+      c.amount.replace(/[^0-9,.-]/g, '')
+    ]);
+
+    downloadCSV(headers, rows, `Contratos_Criticos_${new Date().toISOString().slice(0,10)}.csv`);
+  };
+
+  const exportItemsToExcel = () => {
+    const headers = [
+      'Código de Artículo',
+      'Nombre de Artículo',
+      'Cantidad Aportada',
+      'Porcentaje de Uso'
+    ];
+
+    const rows = topItems.map(item => [
+      item.code,
+      item.name,
+      item.quantity,
+      item.percentage
+    ]);
+
+    downloadCSV(headers, rows, `Articulos_Mas_Utilizados_${new Date().toISOString().slice(0,10)}.csv`);
+  };
+
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end mb-4 gap-4">
@@ -225,9 +341,12 @@ export default function Reportes({ onNavigate }: { onNavigate?: (tab: any) => vo
           <p className="text-gray-500 mt-1">Base de análisis para la gestión de contratos Tilsen.</p>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-semibold shadow-sm hover:bg-gray-50 transition-colors">
+          <button 
+            onClick={exportAllToExcel}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-semibold shadow-sm hover:bg-gray-50 transition-colors text-green-700 font-bold"
+          >
             <Download className="w-4 h-4" />
-            Exportar PDF
+            Exportar a Excel
           </button>
         </div>
       </div>
@@ -414,7 +533,15 @@ export default function Reportes({ onNavigate }: { onNavigate?: (tab: any) => vo
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <div className="px-6 py-5 border-b border-gray-200 flex justify-between items-center bg-white">
           <h3 className="text-lg font-semibold text-black">Contratos Críticos</h3>
-          <button onClick={() => onNavigate?.('vencimientos')} className="text-sm font-bold text-black hover:underline">Ver todos</button>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={exportCriticalToExcel}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-green-700 hover:bg-gray-50 transition-colors shadow-sm"
+            >
+              <Download className="w-3.5 h-3.5" /> Exportar a Excel
+            </button>
+            <button onClick={() => onNavigate?.('vencimientos')} className="text-sm font-bold text-black hover:underline font-semibold">Ver todos</button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -477,7 +604,15 @@ export default function Reportes({ onNavigate }: { onNavigate?: (tab: any) => vo
             <Package className="w-5 h-5 text-gray-500" />
             <h3 className="text-lg font-semibold text-black">Artículos Más Utilizados</h3>
           </div>
-          <button onClick={() => onNavigate?.('articulos')} className="text-sm font-bold text-black hover:underline">Ver todos</button>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={exportItemsToExcel}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-green-700 hover:bg-gray-50 transition-colors shadow-sm"
+            >
+              <Download className="w-3.5 h-3.5" /> Exportar a Excel
+            </button>
+            <button onClick={() => onNavigate?.('articulos')} className="text-sm font-bold text-black hover:underline font-semibold">Ver todos</button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">

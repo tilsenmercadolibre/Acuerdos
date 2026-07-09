@@ -232,7 +232,7 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
     ));
   };
 
-  const generatePDF = (preview: boolean = false) => {
+  const generatePDF = (mode: 'preview' | 'download' | 'base64' = 'download'): string | null => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
     const pageHeight = doc.internal.pageSize.height;
@@ -353,12 +353,18 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
     doc.setFont("helvetica", "normal");
     doc.text("Este documento es generado automáticamente por el sistema de gestión de acuerdos.", 14, pageHeight - 10);
 
-    if (preview) {
+    if (mode === 'preview') {
       const pdfBlob = doc.output('blob');
       const url = URL.createObjectURL(pdfBlob);
       setPdfPreviewUrl(url);
+      return null;
+    } else if (mode === 'base64') {
+      // Strip 'data:application/pdf;base64,' prefix to get raw base64
+      const dataUri = doc.output('datauristring');
+      return dataUri.split(',')[1] ?? dataUri;
     } else {
       doc.save(`Contrato_${codigoCliente || 'Nuevo'}.pdf`);
+      return null;
     }
   };
 
@@ -458,6 +464,9 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
         .update({ numero_acuerdo: numeroAcuerdo })
         .eq('id', newContract.id);
 
+      // Generate PDF as base64 to attach to the email
+      const pdfBase64 = generatePDF('base64');
+
       // Fire and forget — don't block the UI if email fails
       notificarAcuerdoCreado({
         clienteNombre: nombre,
@@ -465,6 +474,7 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
         numeroAcuerdo,
         fechaVencimiento: fechaVencimiento || '',
         creador: person,
+        pdfBase64: pdfBase64 || undefined,
       }).catch(err => console.warn('[Brevo] Email send error:', err));
 
       setIsSuccess(true);
@@ -504,14 +514,14 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
         
         <div className="flex flex-col sm:flex-row gap-4 w-full justify-center">
           <button 
-            onClick={() => generatePDF(false)}
+            onClick={() => generatePDF('download')}
             className="flex items-center justify-center gap-2 px-8 py-3.5 bg-black text-white font-semibold rounded-xl hover:bg-gray-900 transition-all shadow-sm group"
           >
             <Download className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
             Descargar PDF
           </button>
           <button 
-            onClick={() => generatePDF(true)}
+            onClick={() => generatePDF('preview')}
             className="flex items-center justify-center gap-2 px-8 py-3.5 bg-white text-black border border-gray-200 font-semibold rounded-xl hover:bg-gray-50 transition-all shadow-sm group"
           >
             <Eye className="w-5 h-5" />

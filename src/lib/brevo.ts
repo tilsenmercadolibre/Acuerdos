@@ -26,20 +26,25 @@ interface SendParams {
   to: Recipient[];
   templateId: number;
   params: Record<string, string | number>;
+  attachment?: { content: string; name: string }[];
 }
 
-async function send({ to, templateId, params }: SendParams): Promise<void> {
+async function send({ to, templateId, params, attachment }: SendParams): Promise<void> {
   if (!API_KEY || API_KEY === 'TU_API_KEY_AQUI') {
     console.warn('[Brevo] API key no configurada. El email NO se envió.', { to, templateId, params });
     return;
   }
 
-  const body = {
+  const body: any = {
     sender: SENDER,
     to,
     templateId,
     params,
   };
+
+  if (attachment) {
+    body.attachment = attachment;
+  }
 
   const res = await fetch(BREVO_API, {
     method: 'POST',
@@ -67,6 +72,7 @@ export async function notificarAcuerdoCreado(opts: {
   numeroAcuerdo: string;
   fechaVencimiento: string;
   creador: string;
+  pdfBase64?: string;
 }) {
   const params = {
     cliente:            opts.clienteNombre,
@@ -75,11 +81,17 @@ export async function notificarAcuerdoCreado(opts: {
     creador:            opts.creador,
   };
 
+  const attachment = opts.pdfBase64 ? [{
+    content: opts.pdfBase64,
+    name: `Acuerdo_Comercial_${opts.numeroAcuerdo}.pdf`
+  }] : undefined;
+
   // Email a José (notificación interna)
   await send({
     to: [{ email: JOSE_EMAIL, name: JOSE_NAME }],
     templateId: TEMPLATES.PENDIENTE,
     params,
+    attachment,
   });
 
   // Email al cliente
@@ -88,6 +100,7 @@ export async function notificarAcuerdoCreado(opts: {
       to: [{ email: opts.clienteEmail, name: opts.clienteNombre }],
       templateId: TEMPLATES.PENDIENTE,
       params,
+      attachment,
     });
   }
 }
@@ -100,8 +113,15 @@ export async function notificarAcuerdoAprobado(opts: {
   clienteEmail: string;
   numeroAcuerdo: string;
   fechaVencimiento: string;
+  pdfBase64?: string;
 }) {
   if (!opts.clienteEmail) return;
+
+  const attachment = opts.pdfBase64 ? [{
+    content: opts.pdfBase64,
+    name: `Acuerdo_Comercial_${opts.numeroAcuerdo}_Aprobado.pdf`
+  }] : undefined;
+
   await send({
     to: [{ email: opts.clienteEmail, name: opts.clienteNombre }],
     templateId: TEMPLATES.APROBADO,
@@ -110,6 +130,7 @@ export async function notificarAcuerdoAprobado(opts: {
       numero_acuerdo:    opts.numeroAcuerdo,
       fecha_vencimiento: opts.fechaVencimiento || 'Sin vencimiento',
     },
+    attachment,
   });
 }
 

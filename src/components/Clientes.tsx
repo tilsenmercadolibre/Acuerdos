@@ -20,6 +20,7 @@ import {
 import { Client, UserIdentity } from '../types';
 import { supabase } from '../lib/supabase';
 import { notificarAcuerdoAprobado } from '../lib/brevo';
+import { generateContratoPdfBase64, loadLogoBase64 } from '../lib/generateContratoPdf';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import logoImg from '../Assets/image.png';
@@ -656,12 +657,29 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
 
       if (error) throw error;
 
+      // Fetch full contract with items to build PDF
+      const { data: fullContrato } = await supabase
+        .from('contratos')
+        .select('*, cliente:clientes(*), contrato_aportes(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*)), contrato_descuentos(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*))')
+        .eq('id', contractId)
+        .single();
+
+      // Generate PDF and attach to approval email
+      let pdfBase64: string | undefined;
+      try {
+        const { base64: logoB64, aspect } = await loadLogoBase64(logoImg);
+        pdfBase64 = await generateContratoPdfBase64(fullContrato, logoB64, aspect);
+      } catch (pdfErr) {
+        console.warn('[PDF] Error generando PDF para adjuntar:', pdfErr);
+      }
+
       // Fire and forget email
       notificarAcuerdoAprobado({
         clienteNombre: clientName,
         clienteEmail: clientEmail || '',
         numeroAcuerdo: numeroAcuerdo || `AC-${contractId.slice(0, 6).toUpperCase()}`,
         fechaVencimiento: fechaVencimiento || '',
+        pdfBase64,
       }).catch(err => console.warn('[Brevo] Approval notification failed:', err));
 
       alert('El acuerdo ha sido aprobado exitosamente.');
