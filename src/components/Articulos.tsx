@@ -35,6 +35,12 @@ export default function Articulos() {
   const [editingCalibreId, setEditingCalibreId] = useState<string | null>(null);
   const [editCalibreName, setEditCalibreName] = useState('');
 
+  // Lineas (Subcategorías de Marcas) State
+  const [lineas, setLineas] = useState<any[]>([]);
+  const [expandedMarcaId, setExpandedMarcaId] = useState<string | null>(null);
+  const [newLineName, setNewLineName] = useState('');
+  const [addingLine, setAddingLine] = useState(false);
+
   useEffect(() => {
     fetchData();
   }, []);
@@ -42,15 +48,17 @@ export default function Articulos() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [marcasRes, calibresRes, itemsRes] = await Promise.all([
+      const [marcasRes, calibresRes, itemsRes, lineasRes] = await Promise.all([
         supabase.from('marcas').select('*').order('nombre'),
         supabase.from('calibres').select('*').order('nombre'),
-        supabase.from('articulos').select('*, marca:marcas(*), calibre:calibres(*)').order('nombre')
+        supabase.from('articulos').select('*, marca:marcas(*), calibre:calibres(*)').order('nombre'),
+        supabase.from('lineas').select('*').order('nombre')
       ]);
 
       if (marcasRes.data) setMarcas(marcasRes.data);
       if (calibresRes.data) setCalibres(calibresRes.data);
       if (itemsRes.data) setItems(itemsRes.data);
+      if (lineasRes.data) setLineas(lineasRes.data);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -148,6 +156,41 @@ export default function Articulos() {
     if (!error) {
       setMarcas(marcas.filter(m => m.id !== id));
       fetchData(); // Refresh items
+    }
+  };
+
+  const handleAddLine = async (e: React.FormEvent, marcaId: string) => {
+    e.preventDefault();
+    if (!newLineName.trim()) return;
+    setAddingLine(true);
+    try {
+      const { data, error } = await supabase
+        .from('lineas')
+        .insert({ nombre: newLineName.trim(), marca_id: marcaId })
+        .select()
+        .single();
+      if (error) throw error;
+      if (data) {
+        setLineas([...lineas, data].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+        setNewLineName('');
+      }
+    } catch (err) {
+      console.error('Error adding line:', err);
+      alert('Error al agregar la línea.');
+    } finally {
+      setAddingLine(false);
+    }
+  };
+
+  const handleDeleteLine = async (id: string) => {
+    if (!window.confirm('¿Está seguro de que desea eliminar esta línea?')) return;
+    try {
+      const { error } = await supabase.from('lineas').delete().eq('id', id);
+      if (error) throw error;
+      setLineas(lineas.filter(l => l.id !== id));
+    } catch (err) {
+      console.error('Error deleting line:', err);
+      alert('Error al eliminar la línea.');
     }
   };
 
@@ -431,44 +474,109 @@ export default function Articulos() {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {marcas.length > 0 ? marcas.map(m => (
-                  <tr key={m.id} className="hover:bg-gray-50 transition-colors">
-                    {editingMarcaId === m.id ? (
-                      <>
-                        <td className="px-6 py-3">
-                          <input
-                            type="text"
-                            value={editMarcaName}
-                            onChange={e => setEditMarcaName(e.target.value)}
-                            className="w-full bg-white border border-gray-300 rounded px-2 py-1 text-sm outline-none focus:border-black font-semibold text-black"
-                          />
-                        </td>
-                        <td className="px-6 py-3">
-                          <div className="flex justify-end gap-1">
-                            <button onClick={() => handleEditMarca(m.id)} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors">
-                              <Check className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => setEditingMarcaId(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors">
-                              <X className="w-4 h-4" />
-                            </button>
+                  <React.Fragment key={m.id}>
+                    <tr className="hover:bg-gray-50 transition-colors group cursor-pointer" onClick={() => setExpandedMarcaId(expandedMarcaId === m.id ? null : m.id)}>
+                      {editingMarcaId === m.id ? (
+                        <>
+                          <td className="px-6 py-3">
+                            <input
+                              type="text"
+                              value={editMarcaName}
+                              onChange={e => setEditMarcaName(e.target.value)}
+                              onClick={e => e.stopPropagation()}
+                              className="w-full bg-white border border-gray-300 rounded px-2 py-1 text-sm outline-none focus:border-black font-semibold text-black"
+                            />
+                          </td>
+                          <td className="px-6 py-3">
+                            <div className="flex justify-end gap-1" onClick={e => e.stopPropagation()}>
+                              <button onClick={() => handleEditMarca(m.id)} className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors">
+                                <Check className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => setEditingMarcaId(null)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors">
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-6 py-4 text-sm font-semibold text-black flex items-center gap-2">
+                            <span>{m.nombre}</span>
+                            <span className="text-[10px] text-gray-400 font-normal">
+                              ({lineas.filter(l => l.marca_id === m.id).length} líneas)
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()} style={{ opacity: 1 }}>
+                              <button onClick={() => { setEditingMarcaId(m.id); setEditMarcaName(m.nombre); }} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button onClick={() => handleDeleteMarca(m.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+
+                    {expandedMarcaId === m.id && (
+                      <tr className="bg-gray-50/50">
+                        <td colSpan={2} className="px-10 py-5 border-t border-b border-gray-100 shadow-inner">
+                          <div className="space-y-4">
+                            <div className="flex justify-between items-center">
+                              <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-['JetBrains_Mono']">
+                                Líneas (Subcategorías) de {m.nombre}
+                              </h4>
+                            </div>
+
+                            {/* Subcategory list */}
+                            <div className="flex flex-wrap gap-2">
+                              {lineas.filter(l => l.marca_id === m.id).length > 0 ? (
+                                lineas.filter(l => l.marca_id === m.id).map(l => (
+                                  <span key={l.id} className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-gray-200 rounded-full text-xs text-black font-semibold shadow-sm">
+                                    {l.nombre}
+                                    <button 
+                                      type="button" 
+                                      onClick={() => handleDeleteLine(l.id)}
+                                      className="text-gray-400 hover:text-red-600 transition-colors p-0.5 rounded-full hover:bg-gray-100"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-xs text-gray-400 italic">No hay líneas registradas para esta marca.</span>
+                              )}
+                            </div>
+
+                            {/* Add subcategory inline form */}
+                            <form 
+                              onSubmit={(e) => handleAddLine(e, m.id)} 
+                              className="flex gap-2 max-w-sm"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              <input 
+                                type="text"
+                                value={newLineName}
+                                onChange={e => setNewLineName(e.target.value)}
+                                placeholder="Nueva línea (ej. Black, Lager)"
+                                className="flex-1 bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-black outline-none focus:ring-1 focus:ring-black"
+                                required
+                              />
+                              <button 
+                                type="submit" 
+                                disabled={addingLine}
+                                className="px-4 py-1.5 bg-black text-white text-xs font-bold rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-50"
+                              >
+                                Agregar
+                              </button>
+                            </form>
                           </div>
                         </td>
-                      </>
-                    ) : (
-                      <>
-                        <td className="px-6 py-4 text-sm font-semibold text-black">{m.nombre}</td>
-                        <td className="px-6 py-4">
-                          <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: 1 }}>
-                            <button onClick={() => { setEditingMarcaId(m.id); setEditMarcaName(m.nombre); }} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => handleDeleteMarca(m.id)} className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </td>
-                      </>
+                      </tr>
                     )}
-                  </tr>
+                  </React.Fragment>
                 )) : (
                   <tr>
                     <td colSpan={2} className="px-6 py-8 text-center text-gray-500 text-sm">No hay marcas registradas.</td>
