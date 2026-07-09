@@ -33,7 +33,7 @@ export default function Dashboard({ identity, onNavigate }: DashboardProps) {
       // Fetch all contracts for the organization
       const { data, error } = await supabase
         .from('contratos')
-        .select('*, cliente:clientes(*), contrato_aportes(*, articulo:articulos(*)), contrato_descuentos(*, articulo:articulos(*))')
+        .select('*, cliente:clientes(*), contrato_aportes(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*)), contrato_descuentos(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*))')
         .eq('organizacion', identity.organization)
         .order('fecha_creacion', { ascending: false });
 
@@ -44,6 +44,7 @@ export default function Dashboard({ identity, onNavigate }: DashboardProps) {
 
       const totalOrg = list.length;
       const activeContracts = list.filter(c => {
+        if (c.estado !== 'APROBADO') return false;
         if (!c.fecha_vencimiento) return true;
         return new Date(c.fecha_vencimiento) >= new Date();
       });
@@ -182,13 +183,25 @@ export default function Dashboard({ identity, onNavigate }: DashboardProps) {
                           {c.fecha_vencimiento ? new Date(c.fecha_vencimiento).toLocaleDateString() : 'Indefinido'}
                         </p>
                         <p className={`text-[10px] font-bold mt-0.5 uppercase ${
-                          isVencido 
-                            ? 'text-red-600' 
-                            : isCritico 
-                            ? 'text-amber-600' 
-                            : 'text-gray-400'
+                          c.estado === 'PENDIENTE_REVISION'
+                            ? 'text-amber-500'
+                            : c.estado === 'VENCIDO' || isVencido
+                            ? 'text-red-600'
+                            : c.estado === 'RENOVADO'
+                            ? 'text-blue-600'
+                            : isCritico
+                            ? 'text-amber-600'
+                            : 'text-green-600'
                         }`}>
-                          {isVencido ? 'Vencido' : isCritico ? 'Crítico' : 'Vigente'}
+                          {c.estado === 'PENDIENTE_REVISION'
+                            ? 'Pendiente'
+                            : c.estado === 'VENCIDO' || isVencido
+                            ? 'Vencido'
+                            : c.estado === 'RENOVADO'
+                            ? 'Renovado'
+                            : isCritico
+                            ? 'Crítico'
+                            : 'Aprobado'}
                         </p>
                       </div>
                       <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-black group-hover:translate-x-1 transition-all" />

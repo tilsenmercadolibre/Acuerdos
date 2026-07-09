@@ -408,7 +408,8 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
           tipo: tipoAcuerdo,
           fecha_inicio: tipoAcuerdo === 'A vencimiento' && fechaInicio ? fechaInicio : null,
           fecha_vencimiento: tipoAcuerdo === 'A vencimiento' && fechaVencimiento ? fechaVencimiento : null,
-          descripcion: `Acuerdo comercial del tipo ${tipoAcuerdo}`
+          descripcion: `Acuerdo comercial del tipo ${tipoAcuerdo}`,
+          estado: 'PENDIENTE_REVISION'
         })
         .select()
         .single();

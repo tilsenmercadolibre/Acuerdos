@@ -26,6 +26,7 @@ const BREVO_API   = 'https://api.brevo.com/v3/smtp/email';
 const BREVO_KEY   = Deno.env.get('BREVO_API_KEY') ?? '';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICE_KEY  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+const SENDER_EMAIL = Deno.env.get('BREVO_SENDER_EMAIL') ?? 'sistema@tilsen.com.uy';
 
 const TEMPLATES: Record<string, number> = {
   DOS_MESES:  Number(Deno.env.get('BREVO_TPL_2_MESES')   ?? 3),
@@ -45,7 +46,7 @@ async function sendBrevo(to: { email: string; name: string }, templateId: number
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'api-key': BREVO_KEY },
     body: JSON.stringify({
-      sender: { email: 'tilsenbranding@gmail.com', name: 'Tilsen Acuerdos' },
+      sender: { email: SENDER_EMAIL, name: 'Tilsen Acuerdos' },
       to: [to],
       templateId,
       params,

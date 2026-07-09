@@ -17,8 +17,9 @@ import {
   Download,
   Trash2
 } from 'lucide-react';
-import { Client } from '../types';
+import { Client, UserIdentity } from '../types';
 import { supabase } from '../lib/supabase';
+import { notificarAcuerdoAprobado } from '../lib/brevo';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import logoImg from '../Assets/image.png';
@@ -38,7 +39,26 @@ const getArticlePrice = (articulo: any) => {
   return 1200;
 };
 
-export default function Clientes() {
+const getAporteDisplayName = (ap: any) => {
+  if (ap.articulo) {
+    return ap.articulo.nombre;
+  }
+  const parts: string[] = [];
+  if (ap.marca?.nombre) parts.push(ap.marca.nombre);
+  if (ap.linea?.nombre) parts.push(ap.linea.nombre);
+  if (ap.calibre?.nombre) parts.push(ap.calibre.nombre);
+  return parts.join(' · ') || 'Combinación a medida';
+};
+
+const getAporteDisplayCode = (ap: any) => {
+  return ap.articulo?.codigo || ap.codigo_interno || '-';
+};
+
+interface ClientesProps {
+  identity?: UserIdentity;
+}
+
+export default function Clientes({ identity }: ClientesProps) {
   const [viewMode, setViewMode] = useState<'lista' | 'mapa'>('lista');
   const [searchQuery, setSearchQuery] = useState('');
   const [clients, setClients] = useState<any[]>([]);
@@ -93,7 +113,7 @@ export default function Clientes() {
     try {
       const { data, error } = await supabase
         .from('clientes')
-        .select('*, contratos(*, contrato_aportes(*, articulo:articulos(*)), contrato_descuentos(*, articulo:articulos(*)))')
+        .select('*, contratos(*, contrato_aportes(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*)), contrato_descuentos(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*)))')
         .order('nombre');
       
       if (error) throw error;
@@ -155,8 +175,13 @@ export default function Clientes() {
 
     if (dbClient.contratos && dbClient.contratos.length > 0) {
       const activeContracts = dbClient.contratos.filter((c: any) => {
+        if (c.estado !== 'APROBADO') return false;
         if (!c.fecha_vencimiento) return true;
         return new Date(c.fecha_vencimiento) >= new Date();
+      });
+
+      const pendingContracts = dbClient.contratos.filter((c: any) => {
+        return c.estado === 'PENDIENTE_REVISION';
       });
 
       if (activeContracts.length > 0) {
@@ -169,6 +194,8 @@ export default function Clientes() {
         if (expiringSoon) {
           status = 'Por Vencer';
         }
+      } else if (pendingContracts.length > 0) {
+        status = 'Pendiente Firma';
       } else {
         status = 'Finalizado';
       }
@@ -469,6 +496,7 @@ export default function Clientes() {
                     dbClient={dbC} 
                     logoBase64={logoBase64} 
                     onRefresh={fetchClients} 
+                    identity={identity}
                   />
                 );
               })
@@ -599,14 +627,50 @@ interface ClientCardProps {
   dbClient: any;
   logoBase64: string | null;
   onRefresh: () => void;
+  identity?: UserIdentity;
 }
 
-const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, onRefresh }) => {
+const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, onRefresh, identity }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(client.name);
   const [editEmail, setEditEmail] = useState(dbClient?.email || '');
   const [saving, setSaving] = useState(false);
+
+  const handleApproveContract = async (
+    contractId: string, 
+    clientName: string, 
+    clientEmail: string, 
+    numeroAcuerdo: string, 
+    fechaVencimiento: string
+  ) => {
+    if (!window.confirm('¿Está seguro de que desea aprobar este acuerdo?')) return;
+    try {
+      const { error } = await supabase
+        .from('contratos')
+        .update({ 
+          estado: 'APROBADO', 
+          fecha_aprobacion: new Date().toISOString() 
+        })
+        .eq('id', contractId);
+
+      if (error) throw error;
+
+      // Fire and forget email
+      notificarAcuerdoAprobado({
+        clienteNombre: clientName,
+        clienteEmail: clientEmail || '',
+        numeroAcuerdo: numeroAcuerdo || `AC-${contractId.slice(0, 6).toUpperCase()}`,
+        fechaVencimiento: fechaVencimiento || '',
+      }).catch(err => console.warn('[Brevo] Approval notification failed:', err));
+
+      alert('El acuerdo ha sido aprobado exitosamente.');
+      onRefresh();
+    } catch (err: any) {
+      console.error('Error approving contract:', err);
+      alert('Error al aprobar el acuerdo: ' + err.message);
+    }
+  };
 
   const getStatusColor = (status: Client['status']) => {
     switch (status) {
@@ -718,8 +782,8 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
       doc.text("Aporte (Productos/Servicios)", 14, startY);
       
       const aporteBody = c.contrato_aportes.map((ap: any) => [
-        ap.articulo?.codigo || 'N/A',
-        ap.articulo?.nombre || 'N/A',
+        getAporteDisplayCode(ap),
+        getAporteDisplayName(ap),
         ap.cantidad?.toString() || '0'
       ]);
 
@@ -740,8 +804,8 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
       doc.text("Descuentos Aplicados", 14, startY);
       
       const descuentoBody = c.contrato_descuentos.map((d: any) => [
-        d.articulo?.codigo || 'N/A',
-        d.articulo?.nombre || 'N/A',
+        getAporteDisplayCode(d),
+        getAporteDisplayName(d),
         `${d.descuento || 0}%`
       ]);
 
@@ -894,8 +958,22 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
                         <span className="px-2.5 py-1 bg-black text-white rounded text-[10px] font-bold uppercase tracking-wider font-['JetBrains_Mono']">
                           {c.organizacion}
                         </span>
-                        <span className={`text-[10px] font-bold uppercase ${isVencido ? 'text-[#b81121]' : 'text-green-600'}`}>
-                          {isVencido ? 'Vencido' : 'Activo'}
+                        <span className={`text-[10px] font-bold uppercase ${
+                          c.estado === 'PENDIENTE_REVISION'
+                            ? 'text-amber-600'
+                            : c.estado === 'VENCIDO' || isVencido
+                            ? 'text-[#b81121]'
+                            : c.estado === 'RENOVADO'
+                            ? 'text-blue-600'
+                            : 'text-green-600'
+                        }`}>
+                          {c.estado === 'PENDIENTE_REVISION'
+                            ? 'Pendiente'
+                            : c.estado === 'VENCIDO' || isVencido
+                            ? 'Vencido'
+                            : c.estado === 'RENOVADO'
+                            ? 'Renovado'
+                            : 'Aprobado'}
                         </span>
                       </div>
                       
@@ -920,7 +998,7 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
                               const discObj = c.contrato_descuentos?.find((d: any) => d.articulo_id === ap.articulo_id);
                               return (
                                 <div key={ap.id} className="flex justify-between items-center bg-white border border-gray-100 rounded px-2 py-1 text-gray-700">
-                                  <span>{ap.articulo?.nombre || 'Artículo'} (x{ap.cantidad})</span>
+                                  <span>{getAporteDisplayName(ap)} (x{ap.cantidad})</span>
                                   {discObj && (
                                     <span className="text-[10px] font-bold text-[#b81121] bg-red-50 px-1.5 py-0.5 rounded">-{discObj.descuento}% desc.</span>
                                   )}
@@ -932,13 +1010,25 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
                       )}
                     </div>
                     
-                    <button 
-                      onClick={() => downloadContractPdf(c)}
-                      className="mt-6 w-full flex items-center justify-center gap-2 py-2 border border-gray-200 rounded-lg text-xs font-semibold text-black hover:bg-gray-100 transition-colors shadow-sm bg-white"
-                    >
-                      <Download className="w-4.5 h-4.5" />
-                      Descargar PDF del Acuerdo
-                    </button>
+                    <div className="space-y-2 mt-6">
+                      {c.estado === 'PENDIENTE_REVISION' && identity?.name?.toLowerCase() === 'jose' && (
+                        <button 
+                          onClick={() => handleApproveContract(c.id, client.name, dbClient?.email, c.numero_acuerdo, c.fecha_vencimiento)}
+                          className="w-full flex items-center justify-center gap-2 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-sm"
+                        >
+                          <Check className="w-4 h-4" />
+                          Aprobar Acuerdo
+                        </button>
+                      )}
+                      
+                      <button 
+                        onClick={() => downloadContractPdf(c)}
+                        className="w-full flex items-center justify-center gap-2 py-2 border border-gray-200 rounded-lg text-xs font-semibold text-black hover:bg-gray-100 transition-colors shadow-sm bg-white"
+                      >
+                        <Download className="w-4.5 h-4.5" />
+                        Descargar PDF del Acuerdo
+                      </button>
+                    </div>
                   </div>
                 );
               })}

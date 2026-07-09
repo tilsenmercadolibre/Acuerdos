@@ -109,7 +109,7 @@ export default function App() {
             <Dashboard identity={identity} onNavigate={(tab) => setActiveTab(tab)} />
           )}
           {activeTab === 'reportes' && <Reportes onNavigate={(tab) => setActiveTab(tab)} />}
-          {activeTab === 'clientes' && <Clientes />}
+          {activeTab === 'clientes' && <Clientes identity={identity} />}
           {activeTab === 'vencimientos' && <Vencimientos identity={identity} />}
           {activeTab === 'articulos' && <Articulos />}
         </main>

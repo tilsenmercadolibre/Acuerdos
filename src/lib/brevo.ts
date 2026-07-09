@@ -6,7 +6,7 @@ const BREVO_API = 'https://api.brevo.com/v3/smtp/email';
 const API_KEY = import.meta.env.VITE_BREVO_API_KEY ?? '';
 
 const SENDER = {
-  email: 'tilsenbranding@gmail.com',
+  email: import.meta.env.VITE_BREVO_SENDER_EMAIL ?? 'b17197001@smtp-brevo.com',
   name: 'Tilsen Acuerdos',
 };
 
