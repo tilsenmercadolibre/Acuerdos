@@ -779,7 +779,75 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
           </div>
           
           <div>
-            <h3 className="text-lg font-semibold text-black mb-6 border-b border-gray-100 pb-2">Descuentos</h3>
+            <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
+              <h3 className="text-lg font-semibold text-black">Descuentos</h3>
+              <button 
+                type="button" 
+                onClick={() => setShowCustomBuilder(showCustomBuilder === 'descuento' ? null : 'descuento')}
+                className="text-xs text-[#b81121] hover:underline font-semibold"
+              >
+                {showCustomBuilder === 'descuento' ? '✕ Cerrar creador' : '+ Crear combinación a medida (Marca/Línea/Calibre)'}
+              </button>
+            </div>
+
+            {/* Custom Builder Component (Descuento) */}
+            {showCustomBuilder === 'descuento' && (
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 mb-6 space-y-4 shadow-inner">
+                <div className="flex justify-between items-center border-b border-gray-200 pb-2">
+                  <h4 className="text-xs font-bold text-black uppercase tracking-wider font-['JetBrains_Mono']">
+                    Configurar Combinación a Medida (Descuento)
+                  </h4>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Marca</label>
+                    <select
+                      value={customMarcaId}
+                      onChange={e => setCustomMarcaId(e.target.value)}
+                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
+                    >
+                      <option value="">-- Seleccionar Marca (Opcional) --</option>
+                      {marcas.map(m => (
+                        <option key={m.id} value={m.id}>{m.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Línea</label>
+                    <input
+                      type="text"
+                      value={customLinea}
+                      onChange={e => setCustomLinea(e.target.value)}
+                      placeholder="Ej. Black, Amber, Lager, Light (Opcional)"
+                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Calibre</label>
+                    <select
+                      value={customCalibreId}
+                      onChange={e => setCustomCalibreId(e.target.value)}
+                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
+                    >
+                      <option value="">-- Seleccionar Calibre (Opcional) --</option>
+                      {calibres.map(c => (
+                        <option key={c.id} value={c.id}>{c.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="flex justify-end pt-2 border-t border-gray-100">
+                  <button
+                    type="button"
+                    disabled={!customMarcaId && !customLinea.trim() && !customCalibreId}
+                    onClick={handleConfirmCustomBuilder}
+                    className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-40"
+                  >
+                    Agregar al Descuento
+                  </button>
+                </div>
+              </div>
+            )}
             
             <div className="mb-6 relative">
               <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Buscar Artículo para Aplicar Descuento</label>
@@ -798,44 +866,6 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
               
               {showDescuentoList && (
                 <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                  {/* Dynamic Custom item option if search is not empty */}
-                  {searchDescuento.trim() !== '' && (
-                    <button
-                      type="button"
-                      onMouseDown={() => addCustomDescuentoItem(searchDescuento)}
-                      className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 flex items-center justify-between text-[#b81121] font-semibold text-xs"
-                    >
-                      <span>+ Agregar Artículo libre: "{searchDescuento}"</span>
-                      <Plus className="w-4 h-4" />
-                    </button>
-                  )}
-
-                  {/* Dynamic Marcas match */}
-                  {filteredMarcasDescuento.map(m => (
-                    <button
-                      key={`marca-${m.id}`}
-                      type="button"
-                      onMouseDown={() => addCustomDescuentoItem(`Marca: ${m.nombre}`)}
-                      className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 flex items-center justify-between text-indigo-600 font-semibold text-xs"
-                    >
-                      <span>+ Agregar Marca: "{m.nombre}"</span>
-                      <Plus className="w-4 h-4" />
-                    </button>
-                  ))}
-
-                  {/* Dynamic Calibres match */}
-                  {filteredCalibresDescuento.map(c => (
-                    <button
-                      key={`calibre-${c.id}`}
-                      type="button"
-                      onMouseDown={() => addCustomDescuentoItem(`Calibre: ${c.nombre}`)}
-                      className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 flex items-center justify-between text-green-600 font-semibold text-xs"
-                    >
-                      <span>+ Agregar Calibre: "{c.nombre}"</span>
-                      <Plus className="w-4 h-4" />
-                    </button>
-                  ))}
-
                   {/* Normal articles list */}
                   {filteredDescuentoItems.length > 0 ? (
                     filteredDescuentoItems.map(item => (
@@ -853,7 +883,7 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                       </button>
                     ))
                   ) : (
-                    filteredMarcasDescuento.length === 0 && filteredCalibresDescuento.length === 0 && searchDescuento.trim() === '' && (
+                    searchDescuento.trim() === '' && (
                       <div className="px-4 py-3 text-sm text-gray-500">No se encontraron artículos.</div>
                     )
                   )}
