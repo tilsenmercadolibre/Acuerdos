@@ -254,37 +254,30 @@ export default function Reportes({ onNavigate }: { onNavigate?: (tab: any) => vo
 
   const exportAllToExcel = () => {
     const headers = [
-      'Código de Acuerdo',
+      'Código de Cliente',
       'Cliente',
       'Email Cliente',
       'Vendedor',
       'Organización',
       'Tipo de Acuerdo',
+      'Fecha Creación',
       'Fecha Inicio',
       'Fecha Vencimiento',
-      'Estado',
-      'Valor Estimado (Mensual)'
+      'Estado'
     ];
 
     const rows = filteredContracts.map(c => {
-      let cAmount = 0;
-      c.contrato_aportes?.forEach((ap: any) => {
-        const discObj = c.contrato_descuentos?.find((d: any) => d.articulo_id === ap.articulo_id);
-        const discount = discObj ? parseFloat(discObj.descuento) : 0;
-        cAmount += ap.cantidad * getArticlePrice(ap.articulo) * (1 - discount / 100);
-      });
-
       return [
-        c.numero_acuerdo || `AC-${String(c.id).slice(0, 6).toUpperCase()}`,
+        c.cliente?.codigo || c.cliente?.codigo_cliente || '',
         c.cliente?.nombre || 'Sin Cliente',
         c.cliente?.email || '',
         c.creador || 'Sin Creador',
         c.organizacion,
         c.tipo || 'General',
+        c.fecha_creacion ? new Date(c.fecha_creacion).toLocaleDateString() : 'N/A',
         c.fecha_inicio ? new Date(c.fecha_inicio).toLocaleDateString() : 'N/A',
         c.fecha_vencimiento ? new Date(c.fecha_vencimiento).toLocaleDateString() : 'Indefinido',
-        c.estado || 'PENDIENTE_REVISION',
-        cAmount
+        c.estado || 'PENDIENTE_REVISION'
       ];
     });
 

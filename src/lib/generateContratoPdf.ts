@@ -33,13 +33,15 @@ export async function generateContratoPdfBase64(
   const pageWidth = doc.internal.pageSize.width;
   const pageHeight = doc.internal.pageSize.height;
 
-  const clienteNombre = contrato.cliente?.nombre || 'Sin Cliente';
-  const clienteEmail  = contrato.cliente?.email  || '';
-  const org           = contrato.organizacion     || 'Tilsen';
-  const creador       = contrato.creador          || '';
-  const tipoAcuerdo   = contrato.tipo             || 'General';
-  const fechaInicio   = contrato.fecha_inicio     || '';
-  const fechaVenc     = contrato.fecha_vencimiento || '';
+  const clienteNombre  = contrato.cliente?.nombre || 'Sin Cliente';
+  const clienteEmail   = contrato.cliente?.email  || '';
+  const codigoCliente  = contrato.cliente?.codigo || '-';
+  const fechaCreacion  = contrato.created_at ? new Date(contrato.created_at).toLocaleDateString() : new Date().toLocaleDateString();
+  const org            = contrato.organizacion     || 'Tilsen';
+  const creador        = contrato.creador          || '';
+  const tipoAcuerdo    = contrato.tipo             || 'General';
+  const fechaInicio    = contrato.fecha_inicio     || '';
+  const fechaVenc      = contrato.fecha_vencimiento || '';
 
   // ── Header con logo ──
   if (logoBase64) {
@@ -82,21 +84,23 @@ export async function generateContratoPdfBase64(
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   doc.text(`Nombre: ${clienteNombre}`, 14, clientInfoY + 8);
-  doc.text(`Email: ${clienteEmail}`, 14, clientInfoY + 14);
-  doc.text(`Tipo de Acuerdo: ${tipoAcuerdo}`, 14, clientInfoY + 20);
+  doc.text(`Código de Cliente: ${codigoCliente}`, 14, clientInfoY + 14);
+  doc.text(`Email: ${clienteEmail}`, 14, clientInfoY + 20);
+  doc.text(`Fecha de Creación: ${fechaCreacion}`, 14, clientInfoY + 26);
+  doc.text(`Tipo de Acuerdo: ${tipoAcuerdo}`, 14, clientInfoY + 32);
 
   if (tipoAcuerdo === 'A vencimiento') {
     doc.text(
       `Fecha de Inicio: ${fechaInicio ? new Date(fechaInicio).toLocaleDateString() : '-'}`,
-      14, clientInfoY + 26
+      14, clientInfoY + 38
     );
     doc.text(
       `Fecha de Vencimiento: ${fechaVenc ? new Date(fechaVenc).toLocaleDateString() : '-'}`,
-      14, clientInfoY + 32
+      14, clientInfoY + 44
     );
   }
 
-  let startY = clientInfoY + (tipoAcuerdo === 'A vencimiento' ? 44 : 30);
+  let startY = clientInfoY + (tipoAcuerdo === 'A vencimiento' ? 56 : 44);
 
   // ── Tabla de Aportes ──
   const aportes: any[] = contrato.contrato_aportes || [];

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { AlertCircle, Clock, CalendarDays, CheckCircle2, RefreshCw, ChevronDown, ChevronUp, Send } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { notificarAcuerdoAprobado } from '../lib/brevo';
+import { formatDate, parseLocalDate } from '../lib/dateUtils';
 
 const getArticlePrice = (articulo: any) => {
   if (!articulo) return 1000;
@@ -114,7 +115,7 @@ export default function Vencimientos({ identity }: VencimientosProps) {
     const clientName = c.cliente?.nombre || 'Sin Cliente';
     const initials = clientName.split(' ').map((w: string) => w.charAt(0)).join('').slice(0, 2).toUpperCase() || 'CL';
     const daysLeft = c.fecha_vencimiento
-      ? Math.ceil((new Date(c.fecha_vencimiento).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+      ? Math.ceil(((parseLocalDate(c.fecha_vencimiento)?.getTime() ?? Date.now()) - Date.now()) / (1000 * 60 * 60 * 24))
       : Infinity;
 
     let amount = 0;
@@ -239,6 +240,11 @@ export default function Vencimientos({ identity }: VencimientosProps) {
                         {c.creador && <> · {c.creador}</>}
                         {c.organizacion && <> · {c.organizacion}</>}
                       </p>
+                      {c.fecha_creacion && (
+                        <p className="text-[10px] text-gray-400 font-['JetBrains_Mono'] mt-0.5">
+                          Creado: {formatDate(c.fecha_creacion)}
+                        </p>
+                      )}
                     </div>
 
                     {/* Vencimiento */}
@@ -246,7 +252,7 @@ export default function Vencimientos({ identity }: VencimientosProps) {
                       {c.fecha_vencimiento ? (
                         <>
                           <p className={`text-sm font-bold ${c.urgencia === 'Crítico' || c.urgencia === 'Vencido' ? 'text-[#b81121]' : 'text-gray-800'}`}>
-                            {new Date(c.fecha_vencimiento).toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            {formatDate(c.fecha_vencimiento, { day: 'numeric', month: 'short', year: 'numeric' })}
                           </p>
                           <p className={`text-xs font-['JetBrains_Mono'] ${c.urgencia === 'Crítico' || c.urgencia === 'Vencido' ? 'text-[#b81121]' : 'text-gray-500'}`}>
                             {c.daysLeft < 0 ? `Vencido hace ${Math.abs(c.daysLeft)}d` : `${c.daysLeft} días restantes`}

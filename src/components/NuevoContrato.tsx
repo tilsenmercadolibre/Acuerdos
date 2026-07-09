@@ -275,16 +275,17 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
     doc.text(`Nombre: ${nombre}`, 14, clientInfoY + 8);
-    doc.text(`Código: ${codigoCliente}`, 14, clientInfoY + 14);
+    doc.text(`Código de Cliente: ${codigoCliente}`, 14, clientInfoY + 14);
     doc.text(`Email: ${email}`, 14, clientInfoY + 20);
+    doc.text(`Fecha de Creación: ${new Date().toLocaleDateString()}`, 14, clientInfoY + 26);
 
-    doc.text(`Tipo de Acuerdo: ${tipoAcuerdo}`, 14, clientInfoY + 26);
+    doc.text(`Tipo de Acuerdo: ${tipoAcuerdo}`, 14, clientInfoY + 32);
     if (tipoAcuerdo === 'A vencimiento') {
-      doc.text(`Fecha de Inicio: ${fechaInicio}`, 14, clientInfoY + 32);
-      doc.text(`Fecha de Vencimiento: ${fechaVencimiento}`, 14, clientInfoY + 38);
+      doc.text(`Fecha de Inicio: ${fechaInicio}`, 14, clientInfoY + 38);
+      doc.text(`Fecha de Vencimiento: ${fechaVencimiento}`, 14, clientInfoY + 44);
     }
 
-    let startY = clientInfoY + (tipoAcuerdo === 'A vencimiento' ? 48 : 36);
+    let startY = clientInfoY + (tipoAcuerdo === 'A vencimiento' ? 54 : 42);
 
     // Aporte Table
     if (aporteItems.length > 0) {

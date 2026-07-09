@@ -998,6 +998,9 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
                       <div className="space-y-1.5 text-xs text-gray-600">
                         <p><strong className="text-black font-semibold">Tipo:</strong> {c.tipo}</p>
                         <p><strong className="text-black font-semibold">Creado por:</strong> {c.creador}</p>
+                        {c.fecha_creacion && (
+                          <p><strong className="text-black font-semibold">Fecha de Creación:</strong> {new Date(c.fecha_creacion).toLocaleDateString()}</p>
+                        )}
                         {c.fecha_inicio && (
                           <p><strong className="text-black font-semibold">Fecha de Inicio:</strong> {new Date(c.fecha_inicio).toLocaleDateString()}</p>
                         )}

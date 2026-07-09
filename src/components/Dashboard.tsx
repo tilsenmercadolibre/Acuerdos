@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { FileText, ArrowRight, UserCheck, Eye, Plus, Sparkles } from 'lucide-react';
 import { UserIdentity } from '../types';
 import { supabase } from '../lib/supabase';
+import { formatDate, parseLocalDate } from '../lib/dateUtils';
 
 interface DashboardProps {
   identity: UserIdentity;
@@ -46,7 +47,8 @@ export default function Dashboard({ identity, onNavigate }: DashboardProps) {
       const activeContracts = list.filter(c => {
         if (c.estado !== 'APROBADO') return false;
         if (!c.fecha_vencimiento) return true;
-        return new Date(c.fecha_vencimiento) >= new Date();
+        const exp = parseLocalDate(c.fecha_vencimiento);
+        return exp ? exp >= new Date() : true;
       });
       const activeOrg = activeContracts.length;
 
@@ -160,7 +162,7 @@ export default function Dashboard({ identity, onNavigate }: DashboardProps) {
             ) : recentContracts.length > 0 ? (
               recentContracts.map((c) => {
                 const daysLeft = c.fecha_vencimiento
-                  ? Math.ceil((new Date(c.fecha_vencimiento).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                  ? Math.ceil((parseLocalDate(c.fecha_vencimiento)!.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
                   : null;
 
                 const isVencido = daysLeft !== null && daysLeft < 0;
@@ -175,12 +177,15 @@ export default function Dashboard({ identity, onNavigate }: DashboardProps) {
                       <div>
                         <p className="text-sm font-semibold text-black">{c.cliente?.nombre || 'Sin nombre'}</p>
                         <p className="text-xs text-gray-500 mt-0.5">{c.tipo || 'Acuerdo'} • Código: {c.cliente?.codigo || 'N/A'}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5 font-['JetBrains_Mono']">
+                          Creado: {formatDate(c.fecha_creacion)}
+                        </p>
                       </div>
                     </div>
                     <div className="text-right flex items-center gap-4">
                       <div>
                         <p className="text-xs font-semibold font-['JetBrains_Mono'] text-black">
-                          {c.fecha_vencimiento ? new Date(c.fecha_vencimiento).toLocaleDateString() : 'Indefinido'}
+                          {c.fecha_vencimiento ? formatDate(c.fecha_vencimiento) : 'Indefinido'}
                         </p>
                         <p className={`text-[10px] font-bold mt-0.5 uppercase ${
                           c.estado === 'PENDIENTE_REVISION'
