@@ -18,8 +18,8 @@ import { Tab, UserIdentity } from './types';
 
 // ─── Route Detection ─────────────────────────────────────────────────────────
 const isAcuerdosRoute =
-  window.location.pathname === '/acuerdos' ||
-  window.location.pathname.startsWith('/acuerdos/');
+  window.location.pathname === '/nuevoacuerdo' ||
+  window.location.pathname.startsWith('/nuevoacuerdo/');
 
 // ─── Standalone /acuerdos App ─────────────────────────────────────────────────
 function AcuerdosApp() {
@@ -110,7 +110,7 @@ export default function App() {
           )}
           {activeTab === 'reportes' && <Reportes onNavigate={(tab) => setActiveTab(tab)} />}
           {activeTab === 'clientes' && <Clientes />}
-          {activeTab === 'vencimientos' && <Vencimientos />}
+          {activeTab === 'vencimientos' && <Vencimientos identity={identity} />}
           {activeTab === 'articulos' && <Articulos />}
         </main>
       </div>

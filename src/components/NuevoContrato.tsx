@@ -4,12 +4,17 @@ import { Organization, Item, UserIdentity } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../lib/supabase';
+import { notificarAcuerdoCreado } from '../lib/brevo';
 import tilsenLogoImg from '../Assets/image.png';
 import fncLogoImg from '../Assets/FNC.png';
 
 interface AddedItem {
   id: string;
-  item: Item;
+  item?: Item;
+  marca_id?: string | null;
+  calibre_id?: string | null;
+  linea?: string | null;
+  formattedName: string;
   cantidad?: number | undefined;
   descuento?: number | undefined;
   cantidadRaw: string;
@@ -48,6 +53,14 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
   const [showDescuentoList, setShowDescuentoList] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [logoBase64, setLogoBase64] = useState<string | null>(null);
+  const [logoAspect, setLogoAspect] = useState<number>(1);
+  const [marcas, setMarcas] = useState<any[]>([]);
+  const [calibres, setCalibres] = useState<any[]>([]);
+
+  const [showCustomBuilder, setShowCustomBuilder] = useState<'aporte' | 'descuento' | null>(null);
+  const [customMarcaId, setCustomMarcaId] = useState('');
+  const [customLinea, setCustomLinea] = useState('');
+  const [customCalibreId, setCustomCalibreId] = useState('');
 
   useEffect(() => {
     fetchItems();
@@ -65,6 +78,7 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
         try {
           const dataURL = canvas.toDataURL('image/png');
           setLogoBase64(dataURL);
+          setLogoAspect(img.width / img.height);
         } catch (e) {
           console.error('Error generating base64 from logo:', e);
         }
@@ -76,6 +90,12 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
   const fetchItems = async () => {
     const { data } = await supabase.from('articulos').select('*').order('nombre');
     if (data) setItems(data);
+
+    const { data: marcasData } = await supabase.from('marcas').select('*').order('nombre');
+    if (marcasData) setMarcas(marcasData);
+
+    const { data: calibresData } = await supabase.from('calibres').select('*').order('nombre');
+    if (calibresData) setCalibres(calibresData);
   };
 
   const filteredAporteItems = items.filter(item => 
@@ -88,13 +108,94 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
     item.codigo.toLowerCase().includes(searchDescuento.toLowerCase())
   );
 
+  const filteredMarcasAporte = searchAporte.trim() === '' ? [] : marcas.filter(m =>
+    m.nombre.toLowerCase().includes(searchAporte.toLowerCase())
+  );
+
+  const filteredCalibresAporte = searchAporte.trim() === '' ? [] : calibres.filter(c =>
+    c.nombre.toLowerCase().includes(searchAporte.toLowerCase())
+  );
+
+  const filteredMarcasDescuento = searchDescuento.trim() === '' ? [] : marcas.filter(m =>
+    m.nombre.toLowerCase().includes(searchDescuento.toLowerCase())
+  );
+
+  const filteredCalibresDescuento = searchDescuento.trim() === '' ? [] : calibres.filter(c =>
+    c.nombre.toLowerCase().includes(searchDescuento.toLowerCase())
+  );
+
+  const buildFormattedName = (mId: string | null, lin: string, cId: string | null) => {
+    const parts: string[] = [];
+    if (mId) {
+      const m = marcas.find(x => x.id === mId);
+      if (m) parts.push(m.nombre);
+    }
+    if (lin.trim()) {
+      parts.push(lin.trim());
+    }
+    if (cId) {
+      const c = calibres.find(x => x.id === cId);
+      if (c) parts.push(c.nombre);
+    }
+    return parts.join(' · ');
+  };
+
+  const handleConfirmCustomBuilder = () => {
+    const formatted = buildFormattedName(customMarcaId, customLinea, customCalibreId);
+    if (!formatted) return;
+
+    if (showCustomBuilder === 'aporte') {
+      setAporteItems([...aporteItems, {
+        id: crypto.randomUUID(),
+        marca_id: customMarcaId || null,
+        calibre_id: customCalibreId || null,
+        linea: customLinea.trim() || null,
+        formattedName: formatted,
+        cantidad: 1,
+        cantidadRaw: '1',
+        descuentoRaw: ''
+      }]);
+    } else if (showCustomBuilder === 'descuento') {
+      setDescuentoItems([...descuentoItems, {
+        id: crypto.randomUUID(),
+        marca_id: customMarcaId || null,
+        calibre_id: customCalibreId || null,
+        linea: customLinea.trim() || null,
+        formattedName: formatted,
+        descuento: undefined,
+        descuentoRaw: '',
+        cantidadRaw: ''
+      }]);
+    }
+
+    // Reset states
+    setShowCustomBuilder(null);
+    setCustomMarcaId('');
+    setCustomLinea('');
+    setCustomCalibreId('');
+  };
+
   const addAporteItem = (item: Item) => {
-    setAporteItems([...aporteItems, { id: crypto.randomUUID(), item, cantidad: 1, cantidadRaw: '1', descuentoRaw: '' }]);
+    setAporteItems([...aporteItems, {
+      id: crypto.randomUUID(),
+      item,
+      formattedName: item.nombre,
+      cantidad: 1,
+      cantidadRaw: '1',
+      descuentoRaw: ''
+    }]);
     setSearchAporte('');
   };
 
   const addDescuentoItem = (item: Item) => {
-    setDescuentoItems([...descuentoItems, { id: crypto.randomUUID(), item, descuento: undefined, descuentoRaw: '', cantidadRaw: '' }]);
+    setDescuentoItems([...descuentoItems, {
+      id: crypto.randomUUID(),
+      item,
+      formattedName: item.nombre,
+      descuento: undefined,
+      descuentoRaw: '',
+      cantidadRaw: ''
+    }]);
     setSearchDescuento('');
   };
 
@@ -123,28 +224,29 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
   const generatePDF = (preview: boolean = false) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
+    const pageHeight = doc.internal.pageSize.height;
 
     // ── Tilsen Logo (large, always used regardless of org) ──
     if (logoBase64) {
-      // Logo centrado y grande en la parte superior
-      const logoW = 48;
-      const logoH = 48;
+      // Logo centrado y grande en la parte superior con ancho proporcional libre
+      const logoH = 40;
+      const logoW = logoH * logoAspect;
       const logoX = (pageWidth - logoW) / 2;
       doc.addImage(logoBase64, 'PNG', logoX, 10, logoW, logoH);
 
       doc.setFontSize(18);
       doc.setFont("helvetica", "bold");
-      doc.text('Acuerdo Comercial', pageWidth / 2, 66, { align: 'center' });
+      doc.text('Acuerdo Comercial', pageWidth / 2, 58, { align: 'center' });
 
-      doc.setFontSize(11);
+      doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
       doc.setTextColor(100);
-      doc.text(`Organización: ${org}   |   Creado por: ${person}   |   Fecha: ${new Date().toLocaleDateString()}`, pageWidth / 2, 73, { align: 'center' });
+      doc.text(`Organización: ${org}   |   Creado por: ${person}   |   Fecha: ${new Date().toLocaleDateString()}`, pageWidth / 2, 64, { align: 'center' });
       doc.setTextColor(0);
 
       // Separator line
       doc.setDrawColor(200);
-      doc.line(14, 78, pageWidth - 14, 78);
+      doc.line(14, 68, pageWidth - 14, 68);
     } else {
       doc.setFontSize(18);
       doc.setFont("helvetica", "bold");
@@ -154,8 +256,8 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
       doc.text(`Fecha: ${new Date().toLocaleDateString()}   |   Creado por: ${person}`, 14, 28);
     }
 
-    // Client Info — starts after the larger header (logo 48px + text + separator at y=78)
-    const clientInfoY = logoBase64 ? 88 : 38;
+    // Client Info
+    const clientInfoY = logoBase64 ? 78 : 38;
     doc.setFontSize(13);
     doc.setFont("helvetica", "bold");
     doc.text("Información del Cliente", 14, clientInfoY);
@@ -175,19 +277,19 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
 
     // Aporte Table
     if (aporteItems.length > 0) {
-      doc.setFontSize(14);
+      doc.setFontSize(13);
       doc.setFont("helvetica", "bold");
       doc.text("Aporte (Productos/Servicios)", 14, startY);
       
       const aporteBody = aporteItems.map(ai => [
-        ai.item.codigo,
-        ai.item.nombre,
+        ai.item?.codigo || '-',
+        ai.item?.nombre || ai.nombre_libre || '',
         ai.cantidad?.toString() || '0'
       ]);
 
       autoTable(doc, {
         startY: startY + 6,
-        head: [['Código', 'Artículo', 'Cantidad']],
+        head: [['Código', 'Artículo / Detalle', 'Cantidad']],
         body: aporteBody,
         theme: 'grid',
         headStyles: { fillColor: [0, 0, 0] }
@@ -197,29 +299,47 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
 
     // Descuentos Table
     if (descuentoItems.length > 0) {
-      doc.setFontSize(14);
+      doc.setFontSize(13);
       doc.setFont("helvetica", "bold");
       doc.text("Descuentos Aplicados", 14, startY);
       
       const descuentoBody = descuentoItems.map(ai => [
-        ai.item.codigo,
-        ai.item.nombre,
+        ai.item?.codigo || '-',
+        ai.item?.nombre || ai.nombre_libre || '',
         `${ai.descuento || 0}%`
       ]);
 
       autoTable(doc, {
         startY: startY + 6,
-        head: [['Código', 'Artículo', 'Descuento (%)']],
+        head: [['Código', 'Artículo / Detalle', 'Descuento (%)']],
         body: descuentoBody,
         theme: 'grid',
         headStyles: { fillColor: [0, 0, 0] }
       });
     }
 
+    // Capture final table Y coordinate to print signature line
+    let finalY = startY;
+    if (aporteItems.length > 0) {
+      finalY = (doc as any).lastAutoTable.finalY;
+    }
+    if (descuentoItems.length > 0) {
+      finalY = (doc as any).lastAutoTable.finalY;
+    }
+
+    // Signature Area
+    const signatureY = finalY + 28;
+    const drawSignatureY = signatureY > pageHeight - 35 ? pageHeight - 35 : signatureY;
+
+    doc.setFontSize(10);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(0);
+    doc.text("Firma de Autorización: ____________________________________________", 14, drawSignatureY);
+
     // Footer
-    const pageHeight = doc.internal.pageSize.height;
     doc.setFontSize(8);
     doc.setTextColor(150);
+    doc.setFont("helvetica", "normal");
     doc.text("Este documento es generado automáticamente por el sistema de gestión de acuerdos.", 14, pageHeight - 10);
 
     if (preview) {
@@ -287,7 +407,8 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
       if (aporteItems.length > 0) {
         const aportes = aporteItems.map(ai => ({
           contrato_id: newContract.id,
-          articulo_id: ai.item.id,
+          articulo_id: ai.item?.id || null,
+          nombre_libre: ai.nombre_libre || null,
           cantidad: ai.cantidad || 1
         }));
         const { error: aporteErr } = await supabase
@@ -300,7 +421,8 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
       if (descuentoItems.length > 0) {
         const descuentos = descuentoItems.map(di => ({
           contrato_id: newContract.id,
-          articulo_id: di.item.id,
+          articulo_id: di.item?.id || null,
+          nombre_libre: di.nombre_libre || null,
           descuento: di.descuento || 0
         }));
         const { error: descuentoErr } = await supabase
@@ -308,6 +430,24 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
           .insert(descuentos);
         if (descuentoErr) throw descuentoErr;
       }
+
+      // 5. Send Brevo email notification
+      const numeroAcuerdo = `AC-${new Date().getFullYear()}-${String(newContract.id).slice(0, 6).toUpperCase()}`;
+
+      // Update numero_acuerdo on the contract
+      await supabase
+        .from('contratos')
+        .update({ numero_acuerdo: numeroAcuerdo })
+        .eq('id', newContract.id);
+
+      // Fire and forget — don't block the UI if email fails
+      notificarAcuerdoCreado({
+        clienteNombre: nombre,
+        clienteEmail: email,
+        numeroAcuerdo,
+        fechaVencimiento: fechaVencimiento || '',
+        creador: person,
+      }).catch(err => console.warn('[Brevo] Email send error:', err));
 
       setIsSuccess(true);
     } catch (error: any) {
@@ -479,7 +619,75 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
           )}
 
           <div>
-            <h3 className="text-lg font-semibold text-black mb-6 border-b border-gray-100 pb-2">Aporte</h3>
+            <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
+              <h3 className="text-lg font-semibold text-black">Aporte</h3>
+              <button 
+                type="button" 
+                onClick={() => setShowCustomBuilder(showCustomBuilder === 'aporte' ? null : 'aporte')}
+                className="text-xs text-[#b81121] hover:underline font-semibold"
+              >
+                {showCustomBuilder === 'aporte' ? '✕ Cerrar creador' : '+ Crear combinación a medida (Marca/Línea/Calibre)'}
+              </button>
+            </div>
+
+            {/* Custom Builder Component (Aporte) */}
+            {showCustomBuilder === 'aporte' && (
+              <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 mb-6 space-y-4 shadow-inner">
+                <div className="flex justify-between items-center border-b border-gray-200 pb-2">
+                  <h4 className="text-xs font-bold text-black uppercase tracking-wider font-['JetBrains_Mono']">
+                    Configurar Combinación a Medida (Aporte)
+                  </h4>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Marca</label>
+                    <select
+                      value={customMarcaId}
+                      onChange={e => setCustomMarcaId(e.target.value)}
+                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
+                    >
+                      <option value="">-- Seleccionar Marca (Opcional) --</option>
+                      {marcas.map(m => (
+                        <option key={m.id} value={m.id}>{m.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Línea</label>
+                    <input
+                      type="text"
+                      value={customLinea}
+                      onChange={e => setCustomLinea(e.target.value)}
+                      placeholder="Ej. Black, Amber, Lager, Light (Opcional)"
+                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Calibre</label>
+                    <select
+                      value={customCalibreId}
+                      onChange={e => setCustomCalibreId(e.target.value)}
+                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
+                    >
+                      <option value="">-- Seleccionar Calibre (Opcional) --</option>
+                      {calibres.map(c => (
+                        <option key={c.id} value={c.id}>{c.nombre}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="flex justify-end pt-2 border-t border-gray-100">
+                  <button
+                    type="button"
+                    disabled={!customMarcaId && !customLinea.trim() && !customCalibreId}
+                    onClick={handleConfirmCustomBuilder}
+                    className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-40"
+                  >
+                    Agregar al Aporte
+                  </button>
+                </div>
+              </div>
+            )}
             
             <div className="mb-6 relative">
               <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Buscar Artículo por Código o Nombre</label>
@@ -497,7 +705,8 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
               </div>
               
               {showAporteList && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                  {/* Normal articles list */}
                   {filteredAporteItems.length > 0 ? (
                     filteredAporteItems.map(item => (
                       <button 
@@ -514,7 +723,9 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                       </button>
                     ))
                   ) : (
-                    <div className="px-4 py-3 text-sm text-gray-500">No se encontraron artículos.</div>
+                    searchAporte.trim() === '' && (
+                      <div className="px-4 py-3 text-sm text-gray-500">No se encontraron artículos.</div>
+                    )
                   )}
                 </div>
               )}
@@ -534,8 +745,8 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                   <tbody className="divide-y divide-gray-200 bg-white">
                     {aporteItems.map((ai) => (
                       <tr key={ai.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-600 font-['JetBrains_Mono']">{ai.item.codigo}</td>
-                        <td className="px-4 py-3 text-sm font-semibold text-black">{ai.item.nombre}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600 font-['JetBrains_Mono']">{ai.item?.codigo || '-'}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-black">{ai.item?.nombre || ai.nombre_libre}</td>
                         <td className="px-4 py-3">
                           <input 
                             type="number" 
@@ -586,7 +797,46 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
               </div>
               
               {showDescuentoList && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                  {/* Dynamic Custom item option if search is not empty */}
+                  {searchDescuento.trim() !== '' && (
+                    <button
+                      type="button"
+                      onMouseDown={() => addCustomDescuentoItem(searchDescuento)}
+                      className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 flex items-center justify-between text-[#b81121] font-semibold text-xs"
+                    >
+                      <span>+ Agregar Artículo libre: "{searchDescuento}"</span>
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  )}
+
+                  {/* Dynamic Marcas match */}
+                  {filteredMarcasDescuento.map(m => (
+                    <button
+                      key={`marca-${m.id}`}
+                      type="button"
+                      onMouseDown={() => addCustomDescuentoItem(`Marca: ${m.nombre}`)}
+                      className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 flex items-center justify-between text-indigo-600 font-semibold text-xs"
+                    >
+                      <span>+ Agregar Marca: "{m.nombre}"</span>
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  ))}
+
+                  {/* Dynamic Calibres match */}
+                  {filteredCalibresDescuento.map(c => (
+                    <button
+                      key={`calibre-${c.id}`}
+                      type="button"
+                      onMouseDown={() => addCustomDescuentoItem(`Calibre: ${c.nombre}`)}
+                      className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 flex items-center justify-between text-green-600 font-semibold text-xs"
+                    >
+                      <span>+ Agregar Calibre: "{c.nombre}"</span>
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  ))}
+
+                  {/* Normal articles list */}
                   {filteredDescuentoItems.length > 0 ? (
                     filteredDescuentoItems.map(item => (
                       <button 
@@ -603,7 +853,9 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                       </button>
                     ))
                   ) : (
-                    <div className="px-4 py-3 text-sm text-gray-500">No se encontraron artículos.</div>
+                    filteredMarcasDescuento.length === 0 && filteredCalibresDescuento.length === 0 && searchDescuento.trim() === '' && (
+                      <div className="px-4 py-3 text-sm text-gray-500">No se encontraron artículos.</div>
+                    )
                   )}
                 </div>
               )}
@@ -623,8 +875,8 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                   <tbody className="divide-y divide-gray-200 bg-white">
                     {descuentoItems.map((ai) => (
                       <tr key={ai.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-600 font-['JetBrains_Mono']">{ai.item.codigo}</td>
-                        <td className="px-4 py-3 text-sm font-semibold text-black">{ai.item.nombre}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600 font-['JetBrains_Mono']">{ai.item?.codigo || '-'}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-black">{ai.item?.nombre || ai.nombre_libre}</td>
                         <td className="px-4 py-3">
                           <input 
                             type="number" 
