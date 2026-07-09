@@ -13,7 +13,8 @@ interface AddedItem {
   item?: Item;
   marca_id?: string | null;
   calibre_id?: string | null;
-  linea?: string | null;
+  linea_id?: string | null;
+  codigo_interno?: string | null;
   formattedName: string;
   cantidad?: number | undefined;
   descuento?: number | undefined;
@@ -57,9 +58,10 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
   const [marcas, setMarcas] = useState<any[]>([]);
   const [calibres, setCalibres] = useState<any[]>([]);
 
+  const [lineas, setLineas] = useState<any[]>([]);
   const [showCustomBuilder, setShowCustomBuilder] = useState<'aporte' | 'descuento' | null>(null);
   const [customMarcaId, setCustomMarcaId] = useState('');
-  const [customLinea, setCustomLinea] = useState('');
+  const [customLineaId, setCustomLineaId] = useState('');
   const [customCalibreId, setCustomCalibreId] = useState('');
 
   useEffect(() => {
@@ -96,6 +98,9 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
 
     const { data: calibresData } = await supabase.from('calibres').select('*').order('nombre');
     if (calibresData) setCalibres(calibresData);
+
+    const { data: lineasData } = await supabase.from('lineas').select('*').order('nombre');
+    if (lineasData) setLineas(lineasData);
   };
 
   const filteredAporteItems = items.filter(item => 
@@ -124,14 +129,15 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
     c.nombre.toLowerCase().includes(searchDescuento.toLowerCase())
   );
 
-  const buildFormattedName = (mId: string | null, lin: string, cId: string | null) => {
+  const buildFormattedName = (mId: string | null, linId: string | null, cId: string | null) => {
     const parts: string[] = [];
     if (mId) {
       const m = marcas.find(x => x.id === mId);
       if (m) parts.push(m.nombre);
     }
-    if (lin.trim()) {
-      parts.push(lin.trim());
+    if (linId) {
+      const l = lineas.find(x => x.id === linId);
+      if (l) parts.push(l.nombre);
     }
     if (cId) {
       const c = calibres.find(x => x.id === cId);
@@ -141,15 +147,19 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
   };
 
   const handleConfirmCustomBuilder = () => {
-    const formatted = buildFormattedName(customMarcaId, customLinea, customCalibreId);
+    const formatted = buildFormattedName(customMarcaId, customLineaId, customCalibreId);
     if (!formatted) return;
+
+    // Generate random 6-character uppercase internal code for the custom combination
+    const comboCode = `CMB-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
     if (showCustomBuilder === 'aporte') {
       setAporteItems([...aporteItems, {
         id: crypto.randomUUID(),
         marca_id: customMarcaId || null,
         calibre_id: customCalibreId || null,
-        linea: customLinea.trim() || null,
+        linea_id: customLineaId || null,
+        codigo_interno: comboCode,
         formattedName: formatted,
         cantidad: 1,
         cantidadRaw: '1',
@@ -160,7 +170,8 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
         id: crypto.randomUUID(),
         marca_id: customMarcaId || null,
         calibre_id: customCalibreId || null,
-        linea: customLinea.trim() || null,
+        linea_id: customLineaId || null,
+        codigo_interno: comboCode,
         formattedName: formatted,
         descuento: undefined,
         descuentoRaw: '',
@@ -171,7 +182,7 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
     // Reset states
     setShowCustomBuilder(null);
     setCustomMarcaId('');
-    setCustomLinea('');
+    setCustomLineaId('');
     setCustomCalibreId('');
   };
 
@@ -282,8 +293,8 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
       doc.text("Aporte (Productos/Servicios)", 14, startY);
       
       const aporteBody = aporteItems.map(ai => [
-        ai.item?.codigo || '-',
-        ai.item?.nombre || ai.nombre_libre || '',
+        ai.item?.codigo || ai.codigo_interno || '-',
+        ai.formattedName,
         ai.cantidad?.toString() || '0'
       ]);
 
@@ -304,8 +315,8 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
       doc.text("Descuentos Aplicados", 14, startY);
       
       const descuentoBody = descuentoItems.map(ai => [
-        ai.item?.codigo || '-',
-        ai.item?.nombre || ai.nombre_libre || '',
+        ai.item?.codigo || ai.codigo_interno || '-',
+        ai.formattedName,
         `${ai.descuento || 0}%`
       ]);
 
@@ -408,7 +419,10 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
         const aportes = aporteItems.map(ai => ({
           contrato_id: newContract.id,
           articulo_id: ai.item?.id || null,
-          nombre_libre: ai.nombre_libre || null,
+          marca_id: ai.marca_id || null,
+          calibre_id: ai.calibre_id || null,
+          linea_id: ai.linea_id || null,
+          codigo_interno: ai.codigo_interno || null,
           cantidad: ai.cantidad || 1
         }));
         const { error: aporteErr } = await supabase
@@ -422,7 +436,10 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
         const descuentos = descuentoItems.map(di => ({
           contrato_id: newContract.id,
           articulo_id: di.item?.id || null,
-          nombre_libre: di.nombre_libre || null,
+          marca_id: di.marca_id || null,
+          calibre_id: di.calibre_id || null,
+          linea_id: di.linea_id || null,
+          codigo_interno: di.codigo_interno || null,
           descuento: di.descuento || 0
         }));
         const { error: descuentoErr } = await supabase
@@ -654,13 +671,17 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                   </div>
                   <div>
                     <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Línea</label>
-                    <input
-                      type="text"
-                      value={customLinea}
-                      onChange={e => setCustomLinea(e.target.value)}
-                      placeholder="Ej. Black, Amber, Lager, Light (Opcional)"
-                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
-                    />
+                    <select
+                      value={customLineaId}
+                      onChange={e => setCustomLineaId(e.target.value)}
+                      disabled={!customMarcaId}
+                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black disabled:opacity-50"
+                    >
+                      <option value="">-- Seleccionar Línea (Opcional) --</option>
+                      {lineas.filter(l => l.marca_id === customMarcaId).map(l => (
+                        <option key={l.id} value={l.id}>{l.nombre}</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Calibre</label>
@@ -679,7 +700,7 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                 <div className="flex justify-end pt-2 border-t border-gray-100">
                   <button
                     type="button"
-                    disabled={!customMarcaId && !customLinea.trim() && !customCalibreId}
+                    disabled={!customMarcaId && !customLineaId && !customCalibreId}
                     onClick={handleConfirmCustomBuilder}
                     className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-40"
                   >
@@ -745,8 +766,8 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                   <tbody className="divide-y divide-gray-200 bg-white">
                     {aporteItems.map((ai) => (
                       <tr key={ai.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-600 font-['JetBrains_Mono']">{ai.item?.codigo || '-'}</td>
-                        <td className="px-4 py-3 text-sm font-semibold text-black">{ai.item?.nombre || ai.nombre_libre}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600 font-['JetBrains_Mono']">{ai.item?.codigo || ai.codigo_interno || '-'}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-black">{ai.formattedName}</td>
                         <td className="px-4 py-3">
                           <input 
                             type="number" 
@@ -814,13 +835,17 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                   </div>
                   <div>
                     <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Línea</label>
-                    <input
-                      type="text"
-                      value={customLinea}
-                      onChange={e => setCustomLinea(e.target.value)}
-                      placeholder="Ej. Black, Amber, Lager, Light (Opcional)"
-                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
-                    />
+                    <select
+                      value={customLineaId}
+                      onChange={e => setCustomLineaId(e.target.value)}
+                      disabled={!customMarcaId}
+                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black disabled:opacity-50"
+                    >
+                      <option value="">-- Seleccionar Línea (Opcional) --</option>
+                      {lineas.filter(l => l.marca_id === customMarcaId).map(l => (
+                        <option key={l.id} value={l.id}>{l.nombre}</option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Calibre</label>
@@ -839,7 +864,7 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                 <div className="flex justify-end pt-2 border-t border-gray-100">
                   <button
                     type="button"
-                    disabled={!customMarcaId && !customLinea.trim() && !customCalibreId}
+                    disabled={!customMarcaId && !customLineaId && !customCalibreId}
                     onClick={handleConfirmCustomBuilder}
                     className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-40"
                   >
@@ -905,8 +930,8 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                   <tbody className="divide-y divide-gray-200 bg-white">
                     {descuentoItems.map((ai) => (
                       <tr key={ai.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-600 font-['JetBrains_Mono']">{ai.item?.codigo || '-'}</td>
-                        <td className="px-4 py-3 text-sm font-semibold text-black">{ai.item?.nombre || ai.nombre_libre}</td>
+                        <td className="px-4 py-3 text-sm text-gray-600 font-['JetBrains_Mono']">{ai.item?.codigo || ai.codigo_interno || '-'}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-black">{ai.formattedName}</td>
                         <td className="px-4 py-3">
                           <input 
                             type="number" 
