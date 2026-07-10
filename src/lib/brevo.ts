@@ -1,7 +1,3 @@
-// ─── Brevo (Sendinblue) Email Service ─────────────────────────────────────────
-// Envía transaccionales directamente desde el frontend usando la API de Brevo.
-// La API key está en VITE_BREVO_API_KEY (solo uso interno).
-
 const BREVO_API = 'https://api.brevo.com/v3/smtp/email';
 const API_KEY = import.meta.env.VITE_BREVO_API_KEY ?? '';
 
@@ -61,11 +57,6 @@ async function send({ to, templateId, params, attachment }: SendParams): Promise
   }
 }
 
-// ─── Funciones de alto nivel ──────────────────────────────────────────────────
-
-/**
- * 1) Acuerdo creado → email interno a José + email al cliente
- */
 export async function notificarAcuerdoCreado(opts: {
   clienteNombre: string;
   clienteEmail: string;
@@ -86,7 +77,6 @@ export async function notificarAcuerdoCreado(opts: {
     name: `Acuerdo_Comercial_${opts.numeroAcuerdo}.pdf`
   }] : undefined;
 
-  // Email a José (notificación interna)
   await send({
     to: [{ email: JOSE_EMAIL, name: JOSE_NAME }],
     templateId: TEMPLATES.PENDIENTE,
@@ -94,7 +84,6 @@ export async function notificarAcuerdoCreado(opts: {
     attachment,
   });
 
-  // Email al cliente
   if (opts.clienteEmail) {
     await send({
       to: [{ email: opts.clienteEmail, name: opts.clienteNombre }],
@@ -105,9 +94,6 @@ export async function notificarAcuerdoCreado(opts: {
   }
 }
 
-/**
- * 2) José aprueba → email al cliente
- */
 export async function notificarAcuerdoAprobado(opts: {
   clienteNombre: string;
   clienteEmail: string;
@@ -134,9 +120,6 @@ export async function notificarAcuerdoAprobado(opts: {
   });
 }
 
-/**
- * 3–5) Recordatorio de vencimiento (2 meses / 1 mes / 7 días)
- */
 export async function notificarRecordatorio(opts: {
   clienteNombre: string;
   clienteEmail: string;

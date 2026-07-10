@@ -67,7 +67,7 @@ export default function Clientes({ identity }: ClientesProps) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [logoBase64, setLogoBase64] = useState<string | null>(null);
 
-  // Advanced Filters State
+  //
   const [filterVencimiento, setFilterVencimiento] = useState<string[]>([]);
   const [filterEstado, setFilterEstado] = useState<string>('Todos');
   const [filterTipo, setFilterTipo] = useState<string>('Todos');
@@ -253,7 +253,6 @@ export default function Clientes({ identity }: ClientesProps) {
   const mappedClients = clients.map(mapDbClientToUi);
 
   const filteredClients = mappedClients.filter(client => {
-    // Search Query
     const matchesSearch = client.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           client.id.toLowerCase().includes(searchQuery.toLowerCase());
     if (!matchesSearch) return false;
@@ -294,7 +293,7 @@ export default function Clientes({ identity }: ClientesProps) {
       if (!matchesVencimiento) return false;
     }
 
-    // Fecha Inicio Date Range
+    // 
     if (filterStartDateFrom || filterStartDateTo) {
       const matchesStartDate = dbClient.contratos?.some((c: any) => {
         if (!c.fecha_inicio) return false;
@@ -309,12 +308,12 @@ export default function Clientes({ identity }: ClientesProps) {
     return true;
   });
 
-  // Calculate summaries
+  // 8 alfo, 2 congelados, 3 cajas, 10 empa, 10 publi son 33 en total...
   const totalContracts = filteredClients.reduce((acc, c) => {
     const dbC = clients.find(dbc => dbc.id === c.id);
     return acc + (dbC?.contratos?.length || 0);
   }, 0);
-  
+
   const totalMonthlyBilling = filteredClients.reduce((acc, c) => acc + c.monthlyAmount, 0);
   
   const retentionRate = filteredClients.length > 0
@@ -323,7 +322,7 @@ export default function Clientes({ identity }: ClientesProps) {
 
   return (
     <div className="flex h-full bg-[#f8f9fa] overflow-hidden animate-fadeIn">
-      {/* Advanced Filters Sidebar */}
+      {/*  */}
       <aside className="w-[280px] border-r border-gray-200 bg-white flex flex-col overflow-y-auto hidden lg:flex flex-shrink-0 z-0">
         <div className="p-6">
           <h2 className="text-lg font-bold flex items-center gap-2 mb-8 text-black">
@@ -425,10 +424,10 @@ export default function Clientes({ identity }: ClientesProps) {
         </div>
       </aside>
 
-      {/* Main Content Area */}
+      {/* Cervezas, Refrescos, Espirituosas, Isotónicas */}
       <div className="flex-1 overflow-y-auto p-8 flex flex-col relative z-0">
         <div className="max-w-5xl mx-auto w-full flex-1 flex flex-col">
-          {/* Header */}
+
           <div className="flex flex-col md:flex-row justify-between items-start md:items-end mb-8 gap-4">
             <div className="w-full md:w-auto flex-1">
               <h2 className="text-4xl font-bold text-black font-['Hanken_Grotesk'] tracking-tight">Clientes</h2>
@@ -481,7 +480,7 @@ export default function Clientes({ identity }: ClientesProps) {
             </div>
           )}
 
-          {/* Client List */}
+          {/*  */}
           <div className="space-y-4 flex-1">
             {loading ? (
               <div className="text-center py-12 bg-white border border-gray-200 rounded-xl text-gray-500">

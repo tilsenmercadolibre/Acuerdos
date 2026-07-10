@@ -16,12 +16,10 @@ import Dashboard from './components/Dashboard';
 import AcuerdosSelector from './components/AcuerdosSelector';
 import { Tab, UserIdentity } from './types';
 
-// ─── Route Detection ─────────────────────────────────────────────────────────
 const isAcuerdosRoute =
   window.location.pathname === '/nuevoacuerdo' ||
   window.location.pathname.startsWith('/nuevoacuerdo/');
 
-// ─── Standalone /acuerdos App ─────────────────────────────────────────────────
 function AcuerdosApp() {
   const STORAGE_KEY = 'acuerdos_identity';
 
@@ -61,7 +59,6 @@ function AcuerdosApp() {
   );
 }
 
-// ─── Main Dashboard App ───────────────────────────────────────────────────────
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('reportes');
   const [identity, setIdentity] = useState<UserIdentity | null>(() => {
@@ -69,7 +66,7 @@ export default function App() {
     return saved ? JSON.parse(saved) : null;
   });
 
-  // If the URL is /acuerdos, render the completely isolated creation page
+  // Juaq(Blanco), Flo(Negro), Mat(Negro), Gonza(Negro), Gonza(Verde)
   if (isAcuerdosRoute) {
     return <AcuerdosApp />;
   }
