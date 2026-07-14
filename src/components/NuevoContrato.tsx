@@ -41,6 +41,8 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaVencimiento, setFechaVencimiento] = useState('');
   const [email, setEmail] = useState('');
+  const [categoria, setCategoria] = useState('Cerveza');
+  const [step, setStep] = useState(1);
   const [isSuccess, setIsSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -278,14 +280,15 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
     doc.text(`Código de Cliente: ${codigoCliente}`, 14, clientInfoY + 14);
     doc.text(`Email: ${email}`, 14, clientInfoY + 20);
     doc.text(`Fecha de Creación: ${new Date().toLocaleDateString()}`, 14, clientInfoY + 26);
+    doc.text(`Categoría: ${categoria}`, 14, clientInfoY + 32);
 
-    doc.text(`Tipo de Acuerdo: ${tipoAcuerdo}`, 14, clientInfoY + 32);
+    doc.text(`Tipo de Acuerdo: ${tipoAcuerdo}`, 14, clientInfoY + 38);
     if (tipoAcuerdo === 'A vencimiento') {
-      doc.text(`Fecha de Inicio: ${fechaInicio}`, 14, clientInfoY + 38);
-      doc.text(`Fecha de Vencimiento: ${fechaVencimiento}`, 14, clientInfoY + 44);
+      doc.text(`Fecha de Inicio: ${fechaInicio}`, 14, clientInfoY + 44);
+      doc.text(`Fecha de Vencimiento: ${fechaVencimiento}`, 14, clientInfoY + 50);
     }
 
-    let startY = clientInfoY + (tipoAcuerdo === 'A vencimiento' ? 54 : 42);
+    let startY = clientInfoY + (tipoAcuerdo === 'A vencimiento' ? 60 : 48);
 
     // Aporte Table
     if (aporteItems.length > 0) {
@@ -369,6 +372,73 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
     }
   };
 
+  const nextStepTo2 = () => {
+    if (!nombre.trim() || !codigoCliente.trim() || !email.trim()) {
+      setErrorMsg('Por favor complete todos los campos obligatorios del cliente.');
+      return;
+    }
+    if (!/\S+@\S+\.\S+/.test(email)) {
+      setErrorMsg('Por favor ingrese un correo electrónico de contacto válido.');
+      return;
+    }
+    setErrorMsg(null);
+    setStep(2);
+  };
+
+  const nextStepTo3 = () => {
+    if (tipoAcuerdo === 'A vencimiento') {
+      if (!fechaInicio || !fechaVencimiento) {
+        setErrorMsg('Por favor complete la fecha de inicio y de vencimiento.');
+        return;
+      }
+      if (new Date(fechaInicio) > new Date(fechaVencimiento)) {
+        setErrorMsg('La fecha de inicio no puede ser posterior a la fecha de vencimiento.');
+        return;
+      }
+    }
+    setErrorMsg(null);
+    setStep(3);
+  };
+
+  const nextStepTo4 = async () => {
+    setSaving(true);
+    setErrorMsg(null);
+    try {
+      // Check if client exists
+      const { data: existingClient } = await supabase
+        .from('clientes')
+        .select('id')
+        .eq('codigo', codigoCliente)
+        .maybeSingle();
+
+      if (existingClient) {
+        // Query active/pending contracts for this client under the same category
+        const { data: existingContracts, error: queryErr } = await supabase
+          .from('contratos')
+          .select('id, estado')
+          .eq('cliente_id', existingClient.id)
+          .eq('categoria', categoria)
+          .in('estado', ['PENDIENTE_REVISION', 'APROBADO']);
+
+        if (queryErr) throw queryErr;
+
+        if (existingContracts && existingContracts.length > 0) {
+          throw new Error(`El cliente ya posee un acuerdo activo o en revisión para la categoría "${categoria}".`);
+        }
+      }
+      setStep(4);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error al validar acuerdos previos.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const prevStep = () => {
+    setErrorMsg(null);
+    setStep(prev => Math.max(1, prev - 1));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
@@ -413,9 +483,10 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
           creador: person,
           cliente_id: client.id,
           tipo: tipoAcuerdo,
+          categoria: categoria,
           fecha_inicio: tipoAcuerdo === 'A vencimiento' && fechaInicio ? fechaInicio : null,
           fecha_vencimiento: tipoAcuerdo === 'A vencimiento' && fechaVencimiento ? fechaVencimiento : null,
-          descripcion: `Acuerdo comercial del tipo ${tipoAcuerdo}`,
+          descripcion: `Acuerdo comercial de ${categoria} (${tipoAcuerdo})`,
           estado: 'PENDIENTE_REVISION'
         })
         .select()
@@ -577,445 +648,611 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
 
       <div className="p-8 max-w-5xl mx-auto space-y-6">
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="p-8 space-y-10">
-          
-          <div>
-            <h3 className="text-lg font-semibold text-black mb-6 border-b border-gray-100 pb-2">Información del Acuerdo</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Nombre del Cliente</label>
-                <input 
-                  type="text" 
-                  value={nombre}
-                  onChange={e => setNombre(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black" 
-                  placeholder="Nombre del cliente" 
-                  required
-                />
+        {/* Step progress indicator */}
+        <div className="flex items-center justify-between max-w-xl mx-auto mb-8 px-4">
+          {[
+            { label: 'Cliente', step: 1 },
+            { label: 'Vigencia', step: 2 },
+            { label: 'Categoría', step: 3 },
+            { label: 'Productos', step: 4 },
+          ].map((s, idx) => (
+            <React.Fragment key={s.step}>
+              {idx > 0 && (
+                <div className={`flex-1 h-0.5 mx-2 ${step >= s.step ? 'bg-black' : 'bg-gray-200'}`} />
+              )}
+              <div className="flex flex-col items-center gap-1">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-xs transition-colors ${
+                  step === s.step
+                    ? 'bg-black text-white ring-4 ring-gray-100'
+                    : step > s.step
+                    ? 'bg-black text-white'
+                    : 'bg-gray-100 text-gray-400'
+                }`}>
+                  {s.step}
+                </div>
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                  step === s.step ? 'text-black' : 'text-gray-400'
+                }`}>{s.label}</span>
               </div>
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Código de Cliente</label>
-                <input 
-                  type="text" 
-                  value={codigoCliente}
-                  onChange={e => setCodigoCliente(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black" 
-                  placeholder="Ej. CLI-1002" 
-                  required
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Tipo de Acuerdo</label>
-                <select 
-                  value={tipoAcuerdo}
-                  onChange={e => setTipoAcuerdo(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black appearance-none cursor-pointer"
-                >
-                  <option>A vencimiento</option>
-                  <option>Consumisión</option>
-                </select>
-              </div>
-            </div>
-          </div>
+            </React.Fragment>
+          ))}
+        </div>
 
-          {tipoAcuerdo === 'A vencimiento' && (
-            <div>
-              <h3 className="text-lg font-semibold text-black mb-6 border-b border-gray-100 pb-2">Vigencia</h3>
+        {/* STEP 1: CLIENT INFO */}
+        {step === 1 && (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="p-8 space-y-6">
+              <h3 className="text-lg font-semibold text-black mb-6 border-b border-gray-100 pb-2">Información del Cliente</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                  <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Fecha de Inicio</label>
+                  <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Nombre del Cliente *</label>
                   <input 
-                    type="date" 
-                    value={fechaInicio}
-                    onChange={e => setFechaInicio(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-gray-700" 
-                    required={tipoAcuerdo === 'A vencimiento'}
+                    type="text" 
+                    value={nombre}
+                    onChange={e => setNombre(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black" 
+                    placeholder="Nombre del cliente o razón social" 
+                    required
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Fecha de Vencimiento</label>
+                  <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Código de Cliente *</label>
                   <input 
-                    type="date" 
-                    value={fechaVencimiento}
-                    onChange={e => setFechaVencimiento(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-gray-700" 
-                    required={tipoAcuerdo === 'A vencimiento'}
+                    type="text" 
+                    value={codigoCliente}
+                    onChange={e => setCodigoCliente(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black" 
+                    placeholder="Ej. CLI-1002" 
+                    required
                   />
                 </div>
+                <div className="md:col-span-2">
+                  <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Correo Electrónico (Gmail) *</label>
+                  <input 
+                    type="email" 
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    required
+                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black" 
+                    placeholder="usuario@gmail.com" 
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1">Este correo se usará para enviar el PDF del acuerdo firmado/aprobado.</p>
+                </div>
               </div>
-            </div>
-          )}
 
-          <div>
-            <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
-              <h3 className="text-lg font-semibold text-black">Aporte</h3>
+              {errorMsg && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                  {errorMsg}
+                </div>
+              )}
+            </div>
+            
+            <div className="bg-gray-50 px-8 py-5 border-t border-gray-200 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => { if (onComplete) onComplete(); }}
+                className="text-sm font-semibold text-gray-500 hover:text-black transition-colors flex items-center gap-2"
+              >
+                ← Cancelar
+              </button>
               <button 
                 type="button" 
-                onClick={() => setShowCustomBuilder(showCustomBuilder === 'aporte' ? null : 'aporte')}
-                className="text-xs text-[#b81121] hover:underline font-semibold"
+                onClick={nextStepTo2}
+                className="px-6 py-2.5 bg-black text-white font-semibold rounded-lg hover:bg-gray-900 transition-colors shadow-sm"
               >
-                {showCustomBuilder === 'aporte' ? '✕ Cerrar creador' : '+ Crear combinación a medida (Marca/Línea/Calibre)'}
+                Continuar
               </button>
             </div>
+          </div>
+        )}
 
-            {/* Custom Builder Component (Aporte) */}
-            {showCustomBuilder === 'aporte' && (
-              <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 mb-6 space-y-4 shadow-inner">
-                <div className="flex justify-between items-center border-b border-gray-200 pb-2">
-                  <h4 className="text-xs font-bold text-black uppercase tracking-wider font-['JetBrains_Mono']">
-                    Configurar Combinación a Medida (Aporte)
-                  </h4>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Marca</label>
-                    <select
-                      value={customMarcaId}
-                      onChange={e => setCustomMarcaId(e.target.value)}
-                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
-                    >
-                      <option value="">-- Seleccionar Marca (Opcional) --</option>
-                      {marcas.map(m => (
-                        <option key={m.id} value={m.id}>{m.nombre}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Línea</label>
-                    <select
-                      value={customLineaId}
-                      onChange={e => setCustomLineaId(e.target.value)}
-                      disabled={!customMarcaId}
-                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black disabled:opacity-50"
-                    >
-                      <option value="">-- Seleccionar Línea (Opcional) --</option>
-                      {lineas.filter(l => l.marca_id === customMarcaId).map(l => (
-                        <option key={l.id} value={l.id}>{l.nombre}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Calibre</label>
-                    <select
-                      value={customCalibreId}
-                      onChange={e => setCustomCalibreId(e.target.value)}
-                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
-                    >
-                      <option value="">-- Seleccionar Calibre (Opcional) --</option>
-                      {calibres.map(c => (
-                        <option key={c.id} value={c.id}>{c.nombre}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="flex justify-end pt-2 border-t border-gray-100">
-                  <button
-                    type="button"
-                    disabled={!customMarcaId && !customLineaId && !customCalibreId}
-                    onClick={handleConfirmCustomBuilder}
-                    className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-40"
+        {/* STEP 2: CONTRACT TYPE & VIGENCIA */}
+        {step === 2 && (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden animate-fadeIn">
+            <div className="p-8 space-y-6">
+              <h3 className="text-lg font-semibold text-black mb-6 border-b border-gray-100 pb-2">Tipo de Acuerdo y Vigencia</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="md:col-span-2">
+                  <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Tipo de Acuerdo</label>
+                  <select 
+                    value={tipoAcuerdo}
+                    onChange={e => setTipoAcuerdo(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black appearance-none cursor-pointer"
                   >
-                    Agregar al Aporte
+                    <option>A vencimiento</option>
+                    <option>Consumisión</option>
+                  </select>
+                </div>
+              </div>
+
+              {tipoAcuerdo === 'A vencimiento' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-100">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Fecha de Inicio *</label>
+                    <input 
+                      type="date" 
+                      value={fechaInicio}
+                      onChange={e => setFechaInicio(e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-gray-700" 
+                      required={tipoAcuerdo === 'A vencimiento'}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Fecha de Vencimiento *</label>
+                    <input 
+                      type="date" 
+                      value={fechaVencimiento}
+                      onChange={e => setFechaVencimiento(e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-gray-700" 
+                      required={tipoAcuerdo === 'A vencimiento'}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {errorMsg && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                  {errorMsg}
+                </div>
+              )}
+            </div>
+            
+            <div className="bg-gray-50 px-8 py-5 border-t border-gray-200 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={prevStep}
+                className="text-sm font-semibold text-gray-500 hover:text-black transition-colors"
+              >
+                Atrás
+              </button>
+              <button 
+                type="button" 
+                onClick={nextStepTo3}
+                className="px-6 py-2.5 bg-black text-white font-semibold rounded-lg hover:bg-gray-900 transition-colors shadow-sm"
+              >
+                Continuar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 3: PRODUCT CATEGORY */}
+        {step === 3 && (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden animate-fadeIn">
+            <div className="p-8 space-y-6">
+              <h3 className="text-lg font-semibold text-black mb-2 border-b border-gray-100 pb-2">Línea de Producto / Categoría</h3>
+              <p className="text-sm text-gray-500 mb-6">Seleccione la categoría del acuerdo. Un cliente puede tener un acuerdo activo por cada una de estas categorías.</p>
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {[
+                  { id: 'Cerveza', label: 'Cervezas', desc: 'Acuerdos comerciales para cervezas nacionales e importadas.' },
+                  { id: 'Refrescos', label: 'Refrescos', desc: 'Acuerdos comerciales para gaseosas, aguas y jugos.' },
+                  { id: 'Energizantes', label: 'Energizantes', desc: 'Acuerdos comerciales para bebidas energéticas.' },
+                ].map(cat => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => setCategoria(cat.id)}
+                    className={`p-6 rounded-xl border text-left flex flex-col justify-between transition-all ${
+                      categoria === cat.id
+                        ? 'border-black bg-gray-50/50 ring-1 ring-black'
+                        : 'border-gray-200 hover:border-gray-400 bg-white'
+                    }`}
+                  >
+                    <div>
+                      <h4 className="font-bold text-black text-base mb-1">{cat.label}</h4>
+                      <p className="text-xs text-gray-500 leading-relaxed">{cat.desc}</p>
+                    </div>
+                    <div className="mt-4 flex items-center justify-end">
+                      <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                        categoria === cat.id ? 'border-black bg-black' : 'border-gray-300 bg-white'
+                      }`}>
+                        {categoria === cat.id && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {errorMsg && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                  {errorMsg}
+                </div>
+              )}
+            </div>
+            
+            <div className="bg-gray-50 px-8 py-5 border-t border-gray-200 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={prevStep}
+                className="text-sm font-semibold text-gray-500 hover:text-black transition-colors"
+              >
+                Atrás
+              </button>
+              <button 
+                type="button" 
+                onClick={nextStepTo4}
+                disabled={saving}
+                className="px-6 py-2.5 bg-black text-white font-semibold rounded-lg hover:bg-gray-900 transition-colors shadow-sm disabled:opacity-55"
+              >
+                {saving ? 'Validando...' : 'Continuar'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 4: PRODUCTS & DISCOUNTS */}
+        {step === 4 && (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden animate-fadeIn">
+            <div className="p-8 space-y-10">
+              
+              {/* Summary of previous steps */}
+              <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg flex flex-wrap gap-x-8 gap-y-2 text-xs text-gray-600">
+                <div><strong>Cliente:</strong> {nombre} ({codigoCliente})</div>
+                <div><strong>Tipo:</strong> {tipoAcuerdo}</div>
+                {tipoAcuerdo === 'A vencimiento' && (
+                  <div><strong>Vigencia:</strong> {fechaInicio} al {fechaVencimiento}</div>
+                )}
+                <div><strong>Categoría:</strong> {categoria}</div>
+              </div>
+
+              {/* Aporte */}
+              <div>
+                <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
+                  <h3 className="text-lg font-semibold text-black">Aporte</h3>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowCustomBuilder(showCustomBuilder === 'aporte' ? null : 'aporte')}
+                    className="text-xs text-[#b81121] hover:underline font-semibold"
+                  >
+                    {showCustomBuilder === 'aporte' ? '✕ Cerrar creador' : '+ Crear combinación a medida (Marca/Línea/Calibre)'}
                   </button>
                 </div>
-              </div>
-            )}
-            
-            <div className="mb-6 relative">
-              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Buscar Artículo por Código o Nombre</label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input 
-                  type="text" 
-                  value={searchAporte}
-                  onChange={e => setSearchAporte(e.target.value)}
-                  onFocus={() => setShowAporteList(true)}
-                  onBlur={() => setTimeout(() => setShowAporteList(false), 200)}
-                  className="w-full bg-white border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black" 
-                  placeholder="Haga clic para ver todos o busque por código/nombre..." 
-                />
-              </div>
-              
-              {showAporteList && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                  {/* Normal articles list */}
-                  {filteredAporteItems.length > 0 ? (
-                    filteredAporteItems.map(item => (
-                      <button 
-                        key={item.id}
+
+                {/* Custom Builder Component (Aporte) */}
+                {showCustomBuilder === 'aporte' && (
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 mb-6 space-y-4 shadow-inner">
+                    <div className="flex justify-between items-center border-b border-gray-200 pb-2">
+                      <h4 className="text-xs font-bold text-black uppercase tracking-wider font-['JetBrains_Mono']">
+                        Configurar Combinación a Medida (Aporte)
+                      </h4>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Marca</label>
+                        <select
+                          value={customMarcaId}
+                          onChange={e => setCustomMarcaId(e.target.value)}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
+                        >
+                          <option value="">-- Seleccionar Marca (Opcional) --</option>
+                          {marcas.map(m => (
+                            <option key={m.id} value={m.id}>{m.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Línea</label>
+                        <select
+                          value={customLineaId}
+                          onChange={e => setCustomLineaId(e.target.value)}
+                          disabled={!customMarcaId}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black disabled:opacity-50"
+                        >
+                          <option value="">-- Seleccionar Línea (Opcional) --</option>
+                          {lineas.filter(l => l.marca_id === customMarcaId).map(l => (
+                            <option key={l.id} value={l.id}>{l.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Calibre</label>
+                        <select
+                          value={customCalibreId}
+                          onChange={e => setCustomCalibreId(e.target.value)}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
+                        >
+                          <option value="">-- Seleccionar Calibre (Opcional) --</option>
+                          {calibres.map(c => (
+                            <option key={c.id} value={c.id}>{c.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex justify-end pt-2 border-t border-gray-100">
+                      <button
                         type="button"
-                        onMouseDown={() => addAporteItem(item)}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0 flex items-center justify-between"
+                        disabled={!customMarcaId && !customLineaId && !customCalibreId}
+                        onClick={handleConfirmCustomBuilder}
+                        className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-40"
                       >
-                        <div>
-                          <p className="text-sm font-semibold text-black">{item.nombre}</p>
-                          <p className="text-xs text-gray-500 font-['JetBrains_Mono']">{item.codigo}</p>
-                        </div>
-                        <Plus className="w-4 h-4 text-gray-400" />
+                        Agregar al Aporte
                       </button>
-                    ))
-                  ) : (
-                    searchAporte.trim() === '' && (
-                      <div className="px-4 py-3 text-sm text-gray-500">No se encontraron artículos.</div>
-                    )
+                    </div>
+                  </div>
+                )}
+                
+                <div className="mb-6 relative">
+                  <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Buscar Artículo por Código o Nombre</label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input 
+                      type="text" 
+                      value={searchAporte}
+                      onChange={e => setSearchAporte(e.target.value)}
+                      onFocus={() => setShowAporteList(true)}
+                      onBlur={() => setTimeout(() => setShowAporteList(false), 200)}
+                      className="w-full bg-white border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black" 
+                      placeholder="Haga clic para ver todos o busque por código/nombre..." 
+                    />
+                  </div>
+                  
+                  {showAporteList && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                      {filteredAporteItems.length > 0 ? (
+                        filteredAporteItems.map(item => (
+                          <button 
+                            key={item.id}
+                            type="button"
+                            onMouseDown={() => addAporteItem(item)}
+                            className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0 flex items-center justify-between"
+                          >
+                            <div>
+                              <p className="text-sm font-semibold text-black">{item.nombre}</p>
+                              <p className="text-xs text-gray-500 font-['JetBrains_Mono']">{item.codigo}</p>
+                            </div>
+                            <Plus className="w-4 h-4 text-gray-400" />
+                          </button>
+                        ))
+                      ) : (
+                        searchAporte.trim() === '' && (
+                          <div className="px-4 py-3 text-sm text-gray-500">No se encontraron artículos.</div>
+                        )
+                      )}
+                    </div>
                   )}
+                </div>
+
+                {aporteItems.length > 0 ? (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider font-['JetBrains_Mono']">Código</th>
+                          <th className="px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider font-['JetBrains_Mono']">Artículo</th>
+                          <th className="px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider font-['JetBrains_Mono']">Cantidad</th>
+                          <th className="px-4 py-3 w-10"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 bg-white">
+                        {aporteItems.map((ai) => (
+                          <tr key={ai.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm text-gray-600 font-['JetBrains_Mono']">{ai.item?.codigo || ai.codigo_interno || '-'}</td>
+                            <td className="px-4 py-3 text-sm font-semibold text-black">{ai.formattedName}</td>
+                            <td className="px-4 py-3">
+                              <input 
+                                type="number" 
+                                min="1"
+                                value={ai.cantidadRaw}
+                                onChange={e => updateAporteItem(ai.id, e.target.value)}
+                                placeholder="1"
+                                className="w-24 bg-white border border-gray-200 rounded px-2 py-1 outline-none focus:border-black text-sm text-black"
+                              />
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <button 
+                                type="button"
+                                onClick={() => removeAporteItem(ai.id)}
+                                className="text-gray-400 hover:text-[#b81121] transition-colors p-1"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 bg-gray-50 border border-gray-200 border-dashed rounded-lg">
+                    <p className="text-sm text-gray-500">Agregue artículos para el aporte del acuerdo comercial.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Descuentos */}
+              <div>
+                <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
+                  <h3 className="text-lg font-semibold text-black">Descuentos</h3>
+                  <button 
+                    type="button" 
+                    onClick={() => setShowCustomBuilder(showCustomBuilder === 'descuento' ? null : 'descuento')}
+                    className="text-xs text-[#b81121] hover:underline font-semibold"
+                  >
+                    {showCustomBuilder === 'descuento' ? '✕ Cerrar creador' : '+ Crear combinación a medida (Marca/Línea/Calibre)'}
+                  </button>
+                </div>
+
+                {/* Custom Builder Component (Descuento) */}
+                {showCustomBuilder === 'descuento' && (
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 mb-6 space-y-4 shadow-inner">
+                    <div className="flex justify-between items-center border-b border-gray-200 pb-2">
+                      <h4 className="text-xs font-bold text-black uppercase tracking-wider font-['JetBrains_Mono']">
+                        Configurar Combinación a Medida (Descuento)
+                      </h4>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Marca</label>
+                        <select
+                          value={customMarcaId}
+                          onChange={e => setCustomMarcaId(e.target.value)}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
+                        >
+                          <option value="">-- Seleccionar Marca (Opcional) --</option>
+                          {marcas.map(m => (
+                            <option key={m.id} value={m.id}>{m.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Línea</label>
+                        <select
+                          value={customLineaId}
+                          onChange={e => setCustomLineaId(e.target.value)}
+                          disabled={!customMarcaId}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black disabled:opacity-50"
+                        >
+                          <option value="">-- Seleccionar Línea (Opcional) --</option>
+                          {lineas.filter(l => l.marca_id === customMarcaId).map(l => (
+                            <option key={l.id} value={l.id}>{l.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Calibre</label>
+                        <select
+                          value={customCalibreId}
+                          onChange={e => setCustomCalibreId(e.target.value)}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
+                        >
+                          <option value="">-- Seleccionar Calibre (Opcional) --</option>
+                          {calibres.map(c => (
+                            <option key={c.id} value={c.id}>{c.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex justify-end pt-2 border-t border-gray-100">
+                      <button
+                        type="button"
+                        disabled={!customMarcaId && !customLineaId && !customCalibreId}
+                        onClick={handleConfirmCustomBuilder}
+                        className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-40"
+                      >
+                        Agregar al Descuento
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
+                <div className="mb-6 relative">
+                  <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Buscar Artículo por Código o Nombre</label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input 
+                      type="text" 
+                      value={searchDescuento}
+                      onChange={e => setSearchDescuento(e.target.value)}
+                      onFocus={() => setShowDescuentoList(true)}
+                      onBlur={() => setTimeout(() => setShowDescuentoList(false), 200)}
+                      className="w-full bg-white border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black" 
+                      placeholder="Haga clic para ver todos o busque por código/nombre..." 
+                    />
+                  </div>
+                  
+                  {showDescuentoList && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
+                      {filteredDescuentoItems.length > 0 ? (
+                        filteredDescuentoItems.map(item => (
+                          <button 
+                            key={item.id}
+                            type="button"
+                            onMouseDown={() => addDescuentoItem(item)}
+                            className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0 flex items-center justify-between"
+                          >
+                            <div>
+                              <p className="text-sm font-semibold text-black">{item.nombre}</p>
+                              <p className="text-xs text-gray-500 font-['JetBrains_Mono']">{item.codigo}</p>
+                            </div>
+                            <Plus className="w-4 h-4 text-gray-400" />
+                          </button>
+                        ))
+                      ) : (
+                        searchDescuento.trim() === '' && (
+                          <div className="px-4 py-3 text-sm text-gray-500">No se encontraron artículos.</div>
+                        )
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {descuentoItems.length > 0 ? (
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider font-['JetBrains_Mono']">Código</th>
+                          <th className="px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider font-['JetBrains_Mono']">Artículo</th>
+                          <th className="px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider font-['JetBrains_Mono']">Descuento (%)</th>
+                          <th className="px-4 py-3 w-10"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 bg-white">
+                        {descuentoItems.map((ai) => (
+                          <tr key={ai.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm text-gray-600 font-['JetBrains_Mono']">{ai.item?.codigo || ai.codigo_interno || '-'}</td>
+                            <td className="px-4 py-3 text-sm font-semibold text-black">{ai.formattedName}</td>
+                            <td className="px-4 py-3">
+                              <input 
+                                type="number" 
+                                min="0"
+                                max="100"
+                                step="0.1"
+                                value={ai.descuentoRaw}
+                                onChange={e => updateDescuentoItem(ai.id, e.target.value)}
+                                placeholder="0"
+                                className="w-24 bg-white border border-gray-200 rounded px-2 py-1 outline-none focus:border-black text-sm text-black"
+                              />
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <button 
+                                type="button"
+                                onClick={() => removeDescuentoItem(ai.id)}
+                                className="text-gray-400 hover:text-[#b81121] transition-colors p-1"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 bg-gray-50 border border-gray-200 border-dashed rounded-lg">
+                    <p className="text-sm text-gray-500">Agregue artículos para aplicar descuentos.</p>
+                  </div>
+                )}
+              </div>
+
+              {errorMsg && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                  {errorMsg}
                 </div>
               )}
             </div>
 
-            {aporteItems.length > 0 ? (
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <table className="w-full text-left border-collapse">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider font-['JetBrains_Mono']">Código</th>
-                      <th className="px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider font-['JetBrains_Mono']">Artículo</th>
-                      <th className="px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider font-['JetBrains_Mono']">Cantidad</th>
-                      <th className="px-4 py-3 w-10"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 bg-white">
-                    {aporteItems.map((ai) => (
-                      <tr key={ai.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-600 font-['JetBrains_Mono']">{ai.item?.codigo || ai.codigo_interno || '-'}</td>
-                        <td className="px-4 py-3 text-sm font-semibold text-black">{ai.formattedName}</td>
-                        <td className="px-4 py-3">
-                          <input 
-                            type="number" 
-                            min="1"
-                            value={ai.cantidadRaw}
-                            onChange={e => updateAporteItem(ai.id, e.target.value)}
-                            placeholder="0"
-                            className="w-24 bg-white border border-gray-200 rounded px-2 py-1 outline-none focus:border-black text-sm text-black"
-                          />
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <button 
-                            type="button"
-                            onClick={() => removeAporteItem(ai.id)}
-                            className="text-gray-400 hover:text-red-600 transition-colors p-1"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="text-center py-8 bg-gray-50 border border-gray-200 border-dashed rounded-lg">
-                <p className="text-sm text-gray-500">Agregue artículos al aporte.</p>
-              </div>
-            )}
-          </div>
-          
-          <div>
-            <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
-              <h3 className="text-lg font-semibold text-black">Descuentos</h3>
-              <button 
-                type="button" 
-                onClick={() => setShowCustomBuilder(showCustomBuilder === 'descuento' ? null : 'descuento')}
-                className="text-xs text-[#b81121] hover:underline font-semibold"
+            <div className="bg-gray-50 px-8 py-5 border-t border-gray-200 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={prevStep}
+                disabled={saving}
+                className="text-sm font-semibold text-gray-500 hover:text-black transition-colors"
               >
-                {showCustomBuilder === 'descuento' ? '✕ Cerrar creador' : '+ Crear combinación a medida (Marca/Línea/Calibre)'}
+                Atrás
+              </button>
+              <button 
+                type="submit" 
+                disabled={saving}
+                className="flex items-center gap-2 px-6 py-2.5 bg-black text-white font-semibold rounded-lg hover:bg-gray-900 transition-colors shadow-sm disabled:opacity-55"
+              >
+                <Save className="w-4 h-4" />
+                {saving ? 'Guardando...' : 'Crear Acuerdo Comercial'}
               </button>
             </div>
-
-            {/* Custom Builder Component (Descuento) */}
-            {showCustomBuilder === 'descuento' && (
-              <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 mb-6 space-y-4 shadow-inner">
-                <div className="flex justify-between items-center border-b border-gray-200 pb-2">
-                  <h4 className="text-xs font-bold text-black uppercase tracking-wider font-['JetBrains_Mono']">
-                    Configurar Combinación a Medida (Descuento)
-                  </h4>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Marca</label>
-                    <select
-                      value={customMarcaId}
-                      onChange={e => setCustomMarcaId(e.target.value)}
-                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
-                    >
-                      <option value="">-- Seleccionar Marca (Opcional) --</option>
-                      {marcas.map(m => (
-                        <option key={m.id} value={m.id}>{m.nombre}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Línea</label>
-                    <select
-                      value={customLineaId}
-                      onChange={e => setCustomLineaId(e.target.value)}
-                      disabled={!customMarcaId}
-                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black disabled:opacity-50"
-                    >
-                      <option value="">-- Seleccionar Línea (Opcional) --</option>
-                      {lineas.filter(l => l.marca_id === customMarcaId).map(l => (
-                        <option key={l.id} value={l.id}>{l.nombre}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Calibre</label>
-                    <select
-                      value={customCalibreId}
-                      onChange={e => setCustomCalibreId(e.target.value)}
-                      className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
-                    >
-                      <option value="">-- Seleccionar Calibre (Opcional) --</option>
-                      {calibres.map(c => (
-                        <option key={c.id} value={c.id}>{c.nombre}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="flex justify-end pt-2 border-t border-gray-100">
-                  <button
-                    type="button"
-                    disabled={!customMarcaId && !customLineaId && !customCalibreId}
-                    onClick={handleConfirmCustomBuilder}
-                    className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-40"
-                  >
-                    Agregar al Descuento
-                  </button>
-                </div>
-              </div>
-            )}
-            
-            <div className="mb-6 relative">
-              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Buscar Artículo para Aplicar Descuento</label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input 
-                  type="text" 
-                  value={searchDescuento}
-                  onChange={e => setSearchDescuento(e.target.value)}
-                  onFocus={() => setShowDescuentoList(true)}
-                  onBlur={() => setTimeout(() => setShowDescuentoList(false), 200)}
-                  className="w-full bg-white border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black" 
-                  placeholder="Haga clic para ver todos o busque por código/nombre..." 
-                />
-              </div>
-              
-              {showDescuentoList && (
-                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                  {/* Normal articles list */}
-                  {filteredDescuentoItems.length > 0 ? (
-                    filteredDescuentoItems.map(item => (
-                      <button 
-                        key={item.id}
-                        type="button"
-                        onMouseDown={() => addDescuentoItem(item)}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0 flex items-center justify-between"
-                      >
-                        <div>
-                          <p className="text-sm font-semibold text-black">{item.nombre}</p>
-                          <p className="text-xs text-gray-500 font-['JetBrains_Mono']">{item.codigo}</p>
-                        </div>
-                        <Plus className="w-4 h-4 text-gray-400" />
-                      </button>
-                    ))
-                  ) : (
-                    searchDescuento.trim() === '' && (
-                      <div className="px-4 py-3 text-sm text-gray-500">No se encontraron artículos.</div>
-                    )
-                  )}
-                </div>
-              )}
-            </div>
-
-            {descuentoItems.length > 0 ? (
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <table className="w-full text-left border-collapse">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider font-['JetBrains_Mono']">Código</th>
-                      <th className="px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider font-['JetBrains_Mono']">Artículo</th>
-                      <th className="px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider font-['JetBrains_Mono']">Descuento (%)</th>
-                      <th className="px-4 py-3 w-10"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 bg-white">
-                    {descuentoItems.map((ai) => (
-                      <tr key={ai.id} className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-600 font-['JetBrains_Mono']">{ai.item?.codigo || ai.codigo_interno || '-'}</td>
-                        <td className="px-4 py-3 text-sm font-semibold text-black">{ai.formattedName}</td>
-                        <td className="px-4 py-3">
-                          <input 
-                            type="number" 
-                            min="0"
-                            max="100"
-                            step="0.1"
-                            value={ai.descuentoRaw}
-                            onChange={e => updateDescuentoItem(ai.id, e.target.value)}
-                            placeholder="0"
-                            className="w-24 bg-white border border-gray-200 rounded px-2 py-1 outline-none focus:border-black text-sm text-black"
-                          />
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <button 
-                            type="button"
-                            onClick={() => removeDescuentoItem(ai.id)}
-                            className="text-gray-400 hover:text-red-600 transition-colors p-1"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="text-center py-8 bg-gray-50 border border-gray-200 border-dashed rounded-lg">
-                <p className="text-sm text-gray-500">Agregue artículos para aplicar descuentos.</p>
-              </div>
-            )}
           </div>
-
-          <div>
-            <h3 className="text-lg font-semibold text-black mb-6 border-b border-gray-100 pb-2">Contacto de Confirmación</h3>
-            <div>
-              <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Correo Electrónico (Gmail) *</label>
-              <input 
-                type="email" 
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-                className="w-full md:w-1/2 bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black" 
-                placeholder="usuario@gmail.com" 
-              />
-            </div>
-          </div>
-
-          {errorMsg && (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-              {errorMsg}
-            </div>
-          )}
-        </div>
-        <div className="bg-gray-50 px-8 py-5 border-t border-gray-200 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => { if (onComplete) onComplete(); }}
-            className="text-sm font-semibold text-gray-500 hover:text-black transition-colors flex items-center gap-2"
-          >
-            ← Volver al panel
-          </button>
-          <button 
-            type="submit" 
-            disabled={saving}
-            className="flex items-center gap-2 px-6 py-2.5 bg-black text-white font-semibold rounded-lg hover:bg-gray-900 transition-colors shadow-sm disabled:opacity-55"
-          >
-            <Save className="w-4 h-4" />
-            {saving ? 'Guardando...' : 'Guardar Acuerdo'}
-          </button>
-        </div>
-      </div>
+        )}
       </div>
     </form>
   );

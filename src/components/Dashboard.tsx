@@ -176,7 +176,11 @@ export default function Dashboard({ identity, onNavigate }: DashboardProps) {
                       </div>
                       <div>
                         <p className="text-sm font-semibold text-black">{c.cliente?.nombre || 'Sin nombre'}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">{c.tipo || 'Acuerdo'} • Código: {c.cliente?.codigo || 'N/A'}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {c.tipo || 'Acuerdo'}
+                          {c.categoria && <span className="ml-1.5 px-1.5 py-0.5 bg-gray-100 rounded text-[9px] font-bold uppercase tracking-wider text-gray-500">{c.categoria}</span>}
+                          {' '}• Código: {c.cliente?.codigo || 'N/A'}
+                        </p>
                         <p className="text-[10px] text-gray-400 mt-0.5 font-['JetBrains_Mono']">
                           Creado: {formatDate(c.fecha_creacion)}
                         </p>

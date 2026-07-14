@@ -640,6 +640,18 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
   const [editEmail, setEditEmail] = useState(dbClient?.email || '');
   const [saving, setSaving] = useState(false);
 
+  const activeCategories = dbClient?.contratos
+    ? dbClient.contratos
+        .filter((c: any) => {
+          if (c.estado !== 'APROBADO') return false;
+          if (!c.fecha_vencimiento) return true;
+          const exp = parseLocalDate(c.fecha_vencimiento);
+          return exp ? exp >= new Date() : true;
+        })
+        .map((c: any) => c.categoria)
+        .filter(Boolean)
+    : [];
+
   const handleApproveContract = async (
     contractId: string, 
     clientName: string, 
@@ -875,6 +887,15 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
                 <h3 className="text-lg font-semibold text-black group-hover:text-[#b81121] transition-colors">{client.name}</h3>
                 <p className="text-sm text-gray-500 mt-1">{client.contactName} • {client.contactRole}</p>
                 <p className="text-[10px] text-gray-400 font-semibold font-['JetBrains_Mono'] mt-1">Cód: {dbClient?.codigo || 'N/A'}</p>
+                {activeCategories.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {Array.from(new Set(activeCategories)).map((cat: any) => (
+                      <span key={cat} className="px-1.5 py-0.5 bg-gray-100 border border-gray-200 text-gray-600 rounded text-[9px] font-bold uppercase tracking-wider">
+                        {cat}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             
@@ -998,6 +1019,7 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
                       </div>
                       
                       <div className="space-y-1.5 text-xs text-gray-600">
+                        <p><strong className="text-black font-semibold">Categoría:</strong> {c.categoria || 'General'}</p>
                         <p><strong className="text-black font-semibold">Tipo:</strong> {c.tipo}</p>
                         <p><strong className="text-black font-semibold">Creado por:</strong> {c.creador}</p>
                         {c.fecha_creacion && (

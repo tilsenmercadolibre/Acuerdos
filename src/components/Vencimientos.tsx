@@ -239,6 +239,7 @@ export default function Vencimientos({ identity }: VencimientosProps) {
                         {c.numero_acuerdo || `AC-${String(c.id).slice(0,6).toUpperCase()}`}
                         {c.creador && <> · {c.creador}</>}
                         {c.organizacion && <> · {c.organizacion}</>}
+                        {c.categoria && <> · {c.categoria}</>}
                       </p>
                       {c.fecha_creacion && (
                         <p className="text-[10px] text-gray-400 font-['JetBrains_Mono'] mt-0.5">
