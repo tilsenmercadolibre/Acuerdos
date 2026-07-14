@@ -89,19 +89,16 @@ export async function generateContratoPdfBase64(
   doc.text(`Fecha de Creación: ${fechaCreacion}`, 14, clientInfoY + 26);
   doc.text(`Categoría: ${contrato.categoria || '-'}`, 14, clientInfoY + 32);
   doc.text(`Tipo de Acuerdo: ${tipoAcuerdo}`, 14, clientInfoY + 38);
+  doc.text(
+    `Fecha de Inicio: ${fechaInicio ? new Date(fechaInicio).toLocaleDateString() : '-'}`,
+    14, clientInfoY + 44
+  );
+  doc.text(
+    `Fecha de Vencimiento: ${fechaVenc ? new Date(fechaVenc).toLocaleDateString() : '-'}`,
+    14, clientInfoY + 50
+  );
 
-  if (tipoAcuerdo === 'A vencimiento') {
-    doc.text(
-      `Fecha de Inicio: ${fechaInicio ? new Date(fechaInicio).toLocaleDateString() : '-'}`,
-      14, clientInfoY + 44
-    );
-    doc.text(
-      `Fecha de Vencimiento: ${fechaVenc ? new Date(fechaVenc).toLocaleDateString() : '-'}`,
-      14, clientInfoY + 50
-    );
-  }
-
-  let startY = clientInfoY + (tipoAcuerdo === 'A vencimiento' ? 60 : 48);
+  let startY = clientInfoY + 60;
 
   // ── Tabla de Aportes ──
   const aportes: any[] = contrato.contrato_aportes || [];

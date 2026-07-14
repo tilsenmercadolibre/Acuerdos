@@ -61,10 +61,14 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
   const [calibres, setCalibres] = useState<any[]>([]);
 
   const [lineas, setLineas] = useState<any[]>([]);
-  const [showCustomBuilder, setShowCustomBuilder] = useState<'aporte' | 'descuento' | null>(null);
-  const [customMarcaId, setCustomMarcaId] = useState('');
-  const [customLineaId, setCustomLineaId] = useState('');
-  const [customCalibreId, setCustomCalibreId] = useState('');
+  const [customMarcaIdAporte, setCustomMarcaIdAporte] = useState('');
+  const [customLineaIdAporte, setCustomLineaIdAporte] = useState('');
+  const [customCalibreIdAporte, setCustomCalibreIdAporte] = useState('');
+  const [customMarcaIdDescuento, setCustomMarcaIdDescuento] = useState('');
+  const [customLineaIdDescuento, setCustomLineaIdDescuento] = useState('');
+  const [customCalibreIdDescuento, setCustomCalibreIdDescuento] = useState('');
+  const [showAporteModal, setShowAporteModal] = useState(false);
+  const [showDescuentoModal, setShowDescuentoModal] = useState(false);
 
   useEffect(() => {
     fetchItems();
@@ -148,44 +152,50 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
     return parts.join(' · ');
   };
 
-  const handleConfirmCustomBuilder = () => {
-    const formatted = buildFormattedName(customMarcaId, customLineaId, customCalibreId);
+  const handleConfirmCustomBuilderAporte = () => {
+    const formatted = buildFormattedName(customMarcaIdAporte, customLineaIdAporte, customCalibreIdAporte);
     if (!formatted) return;
 
-    // Generate random 6-character uppercase internal code for the custom combination
     const comboCode = `CMB-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
 
-    if (showCustomBuilder === 'aporte') {
-      setAporteItems([...aporteItems, {
-        id: crypto.randomUUID(),
-        marca_id: customMarcaId || null,
-        calibre_id: customCalibreId || null,
-        linea_id: customLineaId || null,
-        codigo_interno: comboCode,
-        formattedName: formatted,
-        cantidad: 1,
-        cantidadRaw: '1',
-        descuentoRaw: ''
-      }]);
-    } else if (showCustomBuilder === 'descuento') {
-      setDescuentoItems([...descuentoItems, {
-        id: crypto.randomUUID(),
-        marca_id: customMarcaId || null,
-        calibre_id: customCalibreId || null,
-        linea_id: customLineaId || null,
-        codigo_interno: comboCode,
-        formattedName: formatted,
-        descuento: undefined,
-        descuentoRaw: '',
-        cantidadRaw: ''
-      }]);
-    }
+    setAporteItems([...aporteItems, {
+      id: crypto.randomUUID(),
+      marca_id: customMarcaIdAporte || null,
+      calibre_id: customCalibreIdAporte || null,
+      linea_id: customLineaIdAporte || null,
+      codigo_interno: comboCode,
+      formattedName: formatted,
+      cantidad: 1,
+      cantidadRaw: '1',
+      descuentoRaw: ''
+    }]);
 
-    // Reset states
-    setShowCustomBuilder(null);
-    setCustomMarcaId('');
-    setCustomLineaId('');
-    setCustomCalibreId('');
+    setCustomMarcaIdAporte('');
+    setCustomLineaIdAporte('');
+    setCustomCalibreIdAporte('');
+  };
+
+  const handleConfirmCustomBuilderDescuento = () => {
+    const formatted = buildFormattedName(customMarcaIdDescuento, customLineaIdDescuento, customCalibreIdDescuento);
+    if (!formatted) return;
+
+    const comboCode = `CMB-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+    setDescuentoItems([...descuentoItems, {
+      id: crypto.randomUUID(),
+      marca_id: customMarcaIdDescuento || null,
+      calibre_id: customCalibreIdDescuento || null,
+      linea_id: customLineaIdDescuento || null,
+      codigo_interno: comboCode,
+      formattedName: formatted,
+      descuento: undefined,
+      descuentoRaw: '',
+      cantidadRaw: ''
+    }]);
+
+    setCustomMarcaIdDescuento('');
+    setCustomLineaIdDescuento('');
+    setCustomCalibreIdDescuento('');
   };
 
   const addAporteItem = (item: Item) => {
@@ -283,12 +293,10 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
     doc.text(`Categoría: ${categoria}`, 14, clientInfoY + 32);
 
     doc.text(`Tipo de Acuerdo: ${tipoAcuerdo}`, 14, clientInfoY + 38);
-    if (tipoAcuerdo === 'A vencimiento') {
-      doc.text(`Fecha de Inicio: ${fechaInicio}`, 14, clientInfoY + 44);
-      doc.text(`Fecha de Vencimiento: ${fechaVencimiento}`, 14, clientInfoY + 50);
-    }
+    doc.text(`Fecha de Inicio: ${fechaInicio || '-'}`, 14, clientInfoY + 44);
+    doc.text(`Fecha de Vencimiento: ${fechaVencimiento || '-'}`, 14, clientInfoY + 50);
 
-    let startY = clientInfoY + (tipoAcuerdo === 'A vencimiento' ? 60 : 48);
+    let startY = clientInfoY + 60;
 
     // Aporte Table
     if (aporteItems.length > 0) {
@@ -386,15 +394,13 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
   };
 
   const nextStepTo3 = () => {
-    if (tipoAcuerdo === 'A vencimiento') {
-      if (!fechaInicio || !fechaVencimiento) {
-        setErrorMsg('Por favor complete la fecha de inicio y de vencimiento.');
-        return;
-      }
-      if (new Date(fechaInicio) > new Date(fechaVencimiento)) {
-        setErrorMsg('La fecha de inicio no puede ser posterior a la fecha de vencimiento.');
-        return;
-      }
+    if (!fechaInicio || !fechaVencimiento) {
+      setErrorMsg('Por favor complete la fecha de inicio y de vencimiento.');
+      return;
+    }
+    if (new Date(fechaInicio) > new Date(fechaVencimiento)) {
+      setErrorMsg('La fecha de inicio no puede ser posterior a la fecha de vencimiento.');
+      return;
     }
     setErrorMsg(null);
     setStep(3);
@@ -484,8 +490,8 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
           cliente_id: client.id,
           tipo: tipoAcuerdo,
           categoria: categoria,
-          fecha_inicio: tipoAcuerdo === 'A vencimiento' && fechaInicio ? fechaInicio : null,
-          fecha_vencimiento: tipoAcuerdo === 'A vencimiento' && fechaVencimiento ? fechaVencimiento : null,
+          fecha_inicio: fechaInicio || null,
+          fecha_vencimiento: fechaVencimiento || null,
           descripcion: `Acuerdo comercial de ${categoria} (${tipoAcuerdo})`,
           estado: 'PENDIENTE_REVISION'
         })
@@ -765,30 +771,37 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                 </div>
               </div>
 
-              {tipoAcuerdo === 'A vencimiento' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-100">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-100">
                   <div>
-                    <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Fecha de Inicio *</label>
+                    <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">
+                      Fecha de Inicio *
+                    </label>
                     <input 
                       type="date" 
                       value={fechaInicio}
                       onChange={e => setFechaInicio(e.target.value)}
                       className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-gray-700" 
-                      required={tipoAcuerdo === 'A vencimiento'}
+                      required
                     />
                   </div>
                   <div>
-                    <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Fecha de Vencimiento *</label>
+                    <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">
+                      Fecha de Vencimiento *
+                    </label>
                     <input 
                       type="date" 
                       value={fechaVencimiento}
                       onChange={e => setFechaVencimiento(e.target.value)}
                       className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-gray-700" 
-                      required={tipoAcuerdo === 'A vencimiento'}
+                      required
                     />
                   </div>
+                  {tipoAcuerdo === 'Consumisión' && (
+                    <p className="md:col-span-2 text-[11px] text-gray-400 -mt-2">
+                      Para acuerdos de consumisión, estas fechas delimitan el período durante el cual aplica la estructura de consumo pactada.
+                    </p>
+                  )}
                 </div>
-              )}
 
               {errorMsg && (
                 <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
@@ -890,9 +903,7 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
               <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg flex flex-wrap gap-x-8 gap-y-2 text-xs text-gray-600">
                 <div><strong>Cliente:</strong> {nombre} ({codigoCliente})</div>
                 <div><strong>Tipo:</strong> {tipoAcuerdo}</div>
-                {tipoAcuerdo === 'A vencimiento' && (
-                  <div><strong>Vigencia:</strong> {fechaInicio} al {fechaVencimiento}</div>
-                )}
+                <div><strong>Vigencia:</strong> {fechaInicio} al {fechaVencimiento}</div>
                 <div><strong>Categoría:</strong> {categoria}</div>
               </div>
 
@@ -902,115 +913,72 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                   <h3 className="text-lg font-semibold text-black">Aporte</h3>
                   <button 
                     type="button" 
-                    onClick={() => setShowCustomBuilder(showCustomBuilder === 'aporte' ? null : 'aporte')}
+                    onClick={() => setShowAporteModal(true)}
                     className="text-xs text-[#b81121] hover:underline font-semibold"
                   >
-                    {showCustomBuilder === 'aporte' ? '✕ Cerrar creador' : '+ Crear combinación a medida (Marca/Línea/Calibre)'}
+                    + Agregar producto particular
                   </button>
                 </div>
 
-                {/* Custom Builder Component (Aporte) */}
-                {showCustomBuilder === 'aporte' && (
-                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 mb-6 space-y-4 shadow-inner">
-                    <div className="flex justify-between items-center border-b border-gray-200 pb-2">
-                      <h4 className="text-xs font-bold text-black uppercase tracking-wider font-['JetBrains_Mono']">
-                        Configurar Combinación a Medida (Aporte)
-                      </h4>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Marca</label>
-                        <select
-                          value={customMarcaId}
-                          onChange={e => setCustomMarcaId(e.target.value)}
-                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
-                        >
-                          <option value="">-- Seleccionar Marca (Opcional) --</option>
-                          {marcas.map(m => (
-                            <option key={m.id} value={m.id}>{m.nombre}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Línea</label>
-                        <select
-                          value={customLineaId}
-                          onChange={e => setCustomLineaId(e.target.value)}
-                          disabled={!customMarcaId}
-                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black disabled:opacity-50"
-                        >
-                          <option value="">-- Seleccionar Línea (Opcional) --</option>
-                          {lineas.filter(l => l.marca_id === customMarcaId).map(l => (
-                            <option key={l.id} value={l.id}>{l.nombre}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Calibre</label>
-                        <select
-                          value={customCalibreId}
-                          onChange={e => setCustomCalibreId(e.target.value)}
-                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
-                        >
-                          <option value="">-- Seleccionar Calibre (Opcional) --</option>
-                          {calibres.map(c => (
-                            <option key={c.id} value={c.id}>{c.nombre}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                    <div className="flex justify-end pt-2 border-t border-gray-100">
-                      <button
-                        type="button"
-                        disabled={!customMarcaId && !customLineaId && !customCalibreId}
-                        onClick={handleConfirmCustomBuilder}
-                        className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-40"
+                {/* Custom Builder Component (Aporte) - ALWAYS VISIBLE */}
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 mb-6 space-y-4 shadow-inner animate-fadeIn">
+                  <div className="flex justify-between items-center border-b border-gray-200 pb-2">
+                    <h4 className="text-xs font-bold text-black uppercase tracking-wider font-['JetBrains_Mono']">
+                      Configurar Combinación a Medida (Aporte)
+                    </h4>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Marca</label>
+                      <select
+                        value={customMarcaIdAporte}
+                        onChange={e => setCustomMarcaIdAporte(e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
                       >
-                        Agregar al Aporte
-                      </button>
+                        <option value="">-- Seleccionar Marca (Opcional) --</option>
+                        {marcas.map(m => (
+                          <option key={m.id} value={m.id}>{m.nombre}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Línea</label>
+                      <select
+                        value={customLineaIdAporte}
+                        onChange={e => setCustomLineaIdAporte(e.target.value)}
+                        disabled={!customMarcaIdAporte}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black disabled:opacity-50"
+                      >
+                        <option value="">-- Seleccionar Línea (Opcional) --</option>
+                        {lineas.filter(l => l.marca_id === customMarcaIdAporte).map(l => (
+                          <option key={l.id} value={l.id}>{l.nombre}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Calibre</label>
+                      <select
+                        value={customCalibreIdAporte}
+                        onChange={e => setCustomCalibreIdAporte(e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
+                      >
+                        <option value="">-- Seleccionar Calibre (Opcional) --</option>
+                        {calibres.map(c => (
+                          <option key={c.id} value={c.id}>{c.nombre}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
-                )}
-                
-                <div className="mb-6 relative">
-                  <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Buscar Artículo por Código o Nombre</label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input 
-                      type="text" 
-                      value={searchAporte}
-                      onChange={e => setSearchAporte(e.target.value)}
-                      onFocus={() => setShowAporteList(true)}
-                      onBlur={() => setTimeout(() => setShowAporteList(false), 200)}
-                      className="w-full bg-white border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black" 
-                      placeholder="Haga clic para ver todos o busque por código/nombre..." 
-                    />
+                  <div className="flex justify-end pt-2 border-t border-gray-100">
+                    <button
+                      type="button"
+                      disabled={!customMarcaIdAporte && !customLineaIdAporte && !customCalibreIdAporte}
+                      onClick={handleConfirmCustomBuilderAporte}
+                      className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-40"
+                    >
+                      Agregar al Aporte
+                    </button>
                   </div>
-                  
-                  {showAporteList && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                      {filteredAporteItems.length > 0 ? (
-                        filteredAporteItems.map(item => (
-                          <button 
-                            key={item.id}
-                            type="button"
-                            onMouseDown={() => addAporteItem(item)}
-                            className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0 flex items-center justify-between"
-                          >
-                            <div>
-                              <p className="text-sm font-semibold text-black">{item.nombre}</p>
-                              <p className="text-xs text-gray-500 font-['JetBrains_Mono']">{item.codigo}</p>
-                            </div>
-                            <Plus className="w-4 h-4 text-gray-400" />
-                          </button>
-                        ))
-                      ) : (
-                        searchAporte.trim() === '' && (
-                          <div className="px-4 py-3 text-sm text-gray-500">No se encontraron artículos.</div>
-                        )
-                      )}
-                    </div>
-                  )}
                 </div>
 
                 {aporteItems.length > 0 ? (
@@ -1066,115 +1034,72 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                   <h3 className="text-lg font-semibold text-black">Descuentos</h3>
                   <button 
                     type="button" 
-                    onClick={() => setShowCustomBuilder(showCustomBuilder === 'descuento' ? null : 'descuento')}
+                    onClick={() => setShowDescuentoModal(true)}
                     className="text-xs text-[#b81121] hover:underline font-semibold"
                   >
-                    {showCustomBuilder === 'descuento' ? '✕ Cerrar creador' : '+ Crear combinación a medida (Marca/Línea/Calibre)'}
+                    + Agregar producto particular
                   </button>
                 </div>
 
-                {/* Custom Builder Component (Descuento) */}
-                {showCustomBuilder === 'descuento' && (
-                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 mb-6 space-y-4 shadow-inner">
-                    <div className="flex justify-between items-center border-b border-gray-200 pb-2">
-                      <h4 className="text-xs font-bold text-black uppercase tracking-wider font-['JetBrains_Mono']">
-                        Configurar Combinación a Medida (Descuento)
-                      </h4>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Marca</label>
-                        <select
-                          value={customMarcaId}
-                          onChange={e => setCustomMarcaId(e.target.value)}
-                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
-                        >
-                          <option value="">-- Seleccionar Marca (Opcional) --</option>
-                          {marcas.map(m => (
-                            <option key={m.id} value={m.id}>{m.nombre}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Línea</label>
-                        <select
-                          value={customLineaId}
-                          onChange={e => setCustomLineaId(e.target.value)}
-                          disabled={!customMarcaId}
-                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black disabled:opacity-50"
-                        >
-                          <option value="">-- Seleccionar Línea (Opcional) --</option>
-                          {lineas.filter(l => l.marca_id === customMarcaId).map(l => (
-                            <option key={l.id} value={l.id}>{l.nombre}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Calibre</label>
-                        <select
-                          value={customCalibreId}
-                          onChange={e => setCustomCalibreId(e.target.value)}
-                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
-                        >
-                          <option value="">-- Seleccionar Calibre (Opcional) --</option>
-                          {calibres.map(c => (
-                            <option key={c.id} value={c.id}>{c.nombre}</option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                    <div className="flex justify-end pt-2 border-t border-gray-100">
-                      <button
-                        type="button"
-                        disabled={!customMarcaId && !customLineaId && !customCalibreId}
-                        onClick={handleConfirmCustomBuilder}
-                        className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-40"
+                {/* Custom Builder Component (Descuento) - ALWAYS VISIBLE */}
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 mb-6 space-y-4 shadow-inner animate-fadeIn">
+                  <div className="flex justify-between items-center border-b border-gray-200 pb-2">
+                    <h4 className="text-xs font-bold text-black uppercase tracking-wider font-['JetBrains_Mono']">
+                      Configurar Combinación a Medida (Descuento)
+                    </h4>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Marca</label>
+                      <select
+                        value={customMarcaIdDescuento}
+                        onChange={e => setCustomMarcaIdDescuento(e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
                       >
-                        Agregar al Descuento
-                      </button>
+                        <option value="">-- Seleccionar Marca (Opcional) --</option>
+                        {marcas.map(m => (
+                          <option key={m.id} value={m.id}>{m.nombre}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Línea</label>
+                      <select
+                        value={customLineaIdDescuento}
+                        onChange={e => setCustomLineaIdDescuento(e.target.value)}
+                        disabled={!customMarcaIdDescuento}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black disabled:opacity-50"
+                      >
+                        <option value="">-- Seleccionar Línea (Opcional) --</option>
+                        {lineas.filter(l => l.marca_id === customMarcaIdDescuento).map(l => (
+                          <option key={l.id} value={l.id}>{l.nombre}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Calibre</label>
+                      <select
+                        value={customCalibreIdDescuento}
+                        onChange={e => setCustomCalibreIdDescuento(e.target.value)}
+                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
+                      >
+                        <option value="">-- Seleccionar Calibre (Opcional) --</option>
+                        {calibres.map(c => (
+                          <option key={c.id} value={c.id}>{c.nombre}</option>
+                        ))}
+                      </select>
                     </div>
                   </div>
-                )}
-                
-                <div className="mb-6 relative">
-                  <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Buscar Artículo por Código o Nombre</label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input 
-                      type="text" 
-                      value={searchDescuento}
-                      onChange={e => setSearchDescuento(e.target.value)}
-                      onFocus={() => setShowDescuentoList(true)}
-                      onBlur={() => setTimeout(() => setShowDescuentoList(false), 200)}
-                      className="w-full bg-white border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black" 
-                      placeholder="Haga clic para ver todos o busque por código/nombre..." 
-                    />
+                  <div className="flex justify-end pt-2 border-t border-gray-100">
+                    <button
+                      type="button"
+                      disabled={!customMarcaIdDescuento && !customLineaIdDescuento && !customCalibreIdDescuento}
+                      onClick={handleConfirmCustomBuilderDescuento}
+                      className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-lg hover:bg-gray-900 transition-colors disabled:opacity-40"
+                    >
+                      Agregar al Descuento
+                    </button>
                   </div>
-                  
-                  {showDescuentoList && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-56 overflow-y-auto">
-                      {filteredDescuentoItems.length > 0 ? (
-                        filteredDescuentoItems.map(item => (
-                          <button 
-                            key={item.id}
-                            type="button"
-                            onMouseDown={() => addDescuentoItem(item)}
-                            className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0 flex items-center justify-between"
-                          >
-                            <div>
-                              <p className="text-sm font-semibold text-black">{item.nombre}</p>
-                              <p className="text-xs text-gray-500 font-['JetBrains_Mono']">{item.codigo}</p>
-                            </div>
-                            <Plus className="w-4 h-4 text-gray-400" />
-                          </button>
-                        ))
-                      ) : (
-                        searchDescuento.trim() === '' && (
-                          <div className="px-4 py-3 text-sm text-gray-500">No se encontraron artículos.</div>
-                        )
-                      )}
-                    </div>
-                  )}
                 </div>
 
                 {descuentoItems.length > 0 ? (
@@ -1250,6 +1175,130 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                 <Save className="w-4 h-4" />
                 {saving ? 'Guardando...' : 'Crear Acuerdo Comercial'}
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: PRODUCTO PARTICULAR APORTE */}
+        {showAporteModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-2xl w-full max-w-lg overflow-hidden animate-scaleIn">
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                <h4 className="text-lg font-bold text-black font-['Hanken_Grotesk']">
+                  Agregar Producto Particular (Aporte)
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAporteModal(false);
+                    setSearchAporte('');
+                  }}
+                  className="text-gray-400 hover:text-black transition-colors font-bold text-lg p-1"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input 
+                    type="text" 
+                    value={searchAporte}
+                    onChange={e => setSearchAporte(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black" 
+                    placeholder="Busque por código o nombre..." 
+                    autoFocus
+                  />
+                </div>
+                
+                <div className="max-h-60 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-100">
+                  {filteredAporteItems.length > 0 ? (
+                    filteredAporteItems.map(item => (
+                      <button 
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          addAporteItem(item);
+                          setShowAporteModal(false);
+                        }}
+                        className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors flex items-center justify-between"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-black">{item.nombre}</p>
+                          <p className="text-xs text-gray-500 font-['JetBrains_Mono']">{item.codigo}</p>
+                        </div>
+                        <Plus className="w-4 h-4 text-gray-400" />
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-4 py-6 text-center text-sm text-gray-400">
+                      No se encontraron artículos.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL: PRODUCTO PARTICULAR DESCUENTO */}
+        {showDescuentoModal && (
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-2xl w-full max-w-lg overflow-hidden animate-scaleIn">
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+                <h4 className="text-lg font-bold text-black font-['Hanken_Grotesk']">
+                  Agregar Producto Particular (Descuento)
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDescuentoModal(false);
+                    setSearchDescuento('');
+                  }}
+                  className="text-gray-400 hover:text-black transition-colors font-bold text-lg p-1"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input 
+                    type="text" 
+                    value={searchDescuento}
+                    onChange={e => setSearchDescuento(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black" 
+                    placeholder="Busque por código o nombre..." 
+                    autoFocus
+                  />
+                </div>
+                
+                <div className="max-h-60 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-100">
+                  {filteredDescuentoItems.length > 0 ? (
+                    filteredDescuentoItems.map(item => (
+                      <button 
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          addDescuentoItem(item);
+                          setShowDescuentoModal(false);
+                        }}
+                        className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors flex items-center justify-between"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-black">{item.nombre}</p>
+                          <p className="text-xs text-gray-500 font-['JetBrains_Mono']">{item.codigo}</p>
+                        </div>
+                        <Plus className="w-4 h-4 text-gray-400" />
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-4 py-6 text-center text-sm text-gray-400">
+                      No se encontraron artículos.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         )}
