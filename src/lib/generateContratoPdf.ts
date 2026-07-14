@@ -21,6 +21,9 @@ function formatItemName(ap: any): string {
 }
 
 function formatItemCode(ap: any): string {
+  if (ap.codigo_interno?.startsWith('CMB-')) {
+    return '-';
+  }
   return ap.articulo?.codigo || ap.codigo_interno || '-';
 }
 
@@ -108,14 +111,13 @@ export async function generateContratoPdfBase64(
     doc.text('Aporte (Productos/Servicios)', 14, startY);
 
     const aporteBody = aportes.map(ap => [
-      formatItemCode(ap),
       formatItemName(ap),
       (ap.cantidad || 0).toString()
     ]);
 
     autoTable(doc, {
       startY: startY + 6,
-      head: [['Código', 'Artículo / Detalle', 'Cantidad']],
+      head: [['Artículo / Detalle', 'Cantidad']],
       body: aporteBody,
       theme: 'grid',
       headStyles: { fillColor: [0, 0, 0] }
@@ -131,14 +133,13 @@ export async function generateContratoPdfBase64(
     doc.text('Descuentos Aplicados', 14, startY);
 
     const descuentoBody = descuentos.map(ap => [
-      formatItemCode(ap),
       formatItemName(ap),
       `${ap.descuento || 0}%`
     ]);
 
     autoTable(doc, {
       startY: startY + 6,
-      head: [['Código', 'Artículo / Detalle', 'Descuento (%)']],
+      head: [['Artículo / Detalle', 'Descuento (%)']],
       body: descuentoBody,
       theme: 'grid',
       headStyles: { fillColor: [0, 0, 0] }

@@ -305,14 +305,13 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
       doc.text("Aporte (Productos/Servicios)", 14, startY);
       
       const aporteBody = aporteItems.map(ai => [
-        ai.item?.codigo || ai.codigo_interno || '-',
         ai.formattedName,
         ai.cantidad?.toString() || '0'
       ]);
 
       autoTable(doc, {
         startY: startY + 6,
-        head: [['Código', 'Artículo / Detalle', 'Cantidad']],
+        head: [['Artículo / Detalle', 'Cantidad']],
         body: aporteBody,
         theme: 'grid',
         headStyles: { fillColor: [0, 0, 0] }
@@ -327,14 +326,13 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
       doc.text("Descuentos Aplicados", 14, startY);
       
       const descuentoBody = descuentoItems.map(ai => [
-        ai.item?.codigo || ai.codigo_interno || '-',
         ai.formattedName,
         `${ai.descuento || 0}%`
       ]);
 
       autoTable(doc, {
         startY: startY + 6,
-        head: [['Código', 'Artículo / Detalle', 'Descuento (%)']],
+        head: [['Artículo / Detalle', 'Descuento (%)']],
         body: descuentoBody,
         theme: 'grid',
         headStyles: { fillColor: [0, 0, 0] }

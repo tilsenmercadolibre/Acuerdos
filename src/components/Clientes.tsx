@@ -53,6 +53,9 @@ const getAporteDisplayName = (ap: any) => {
 };
 
 const getAporteDisplayCode = (ap: any) => {
+  if (ap.codigo_interno?.startsWith('CMB-')) {
+    return '-';
+  }
   return ap.articulo?.codigo || ap.codigo_interno || '-';
 };
 
@@ -814,14 +817,13 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
       doc.text("Aporte (Productos/Servicios)", 14, startY);
       
       const aporteBody = c.contrato_aportes.map((ap: any) => [
-        getAporteDisplayCode(ap),
         getAporteDisplayName(ap),
         ap.cantidad?.toString() || '0'
       ]);
 
       autoTable(doc, {
         startY: startY + 6,
-        head: [['Código', 'Artículo', 'Cantidad']],
+        head: [['Artículo', 'Cantidad']],
         body: aporteBody,
         theme: 'grid',
         headStyles: { fillColor: [0, 0, 0] }
@@ -836,14 +838,13 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
       doc.text("Descuentos Aplicados", 14, startY);
       
       const descuentoBody = c.contrato_descuentos.map((d: any) => [
-        getAporteDisplayCode(d),
         getAporteDisplayName(d),
         `${d.descuento || 0}%`
       ]);
 
       autoTable(doc, {
         startY: startY + 6,
-        head: [['Código', 'Artículo', 'Descuento (%)']],
+        head: [['Artículo', 'Descuento (%)']],
         body: descuentoBody,
         theme: 'grid',
         headStyles: { fillColor: [0, 0, 0] }
