@@ -20,6 +20,7 @@ import {
   Cell 
 } from 'recharts';
 import { supabase } from '../lib/supabase';
+import { formatDate, parseLocalDate } from '../lib/dateUtils';
 
 const getArticlePrice = (articulo: any) => {
   if (!articulo) return 1000;
@@ -93,12 +94,13 @@ export default function Reportes({ onNavigate }: { onNavigate?: (tab: any) => vo
 
   const activeContracts = filteredContracts.filter(c => {
     if (!c.fecha_vencimiento) return true;
-    return new Date(c.fecha_vencimiento) >= new Date();
+    const exp = parseLocalDate(c.fecha_vencimiento);
+    return exp ? exp >= new Date() : true;
   });
 
   const upcomingExpirations = filteredContracts.filter(c => {
     if (!c.fecha_vencimiento) return false;
-    const days = Math.ceil((new Date(c.fecha_vencimiento).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    const days = Math.ceil(((parseLocalDate(c.fecha_vencimiento)?.getTime() ?? Date.now()) - Date.now()) / (1000 * 60 * 60 * 24));
     return days >= 0 && days <= 30;
   }).length;
 
@@ -135,7 +137,8 @@ export default function Reportes({ onNavigate }: { onNavigate?: (tab: any) => vo
     
     const count = filteredContracts.filter(c => {
       if (!c.fecha_vencimiento) return false;
-      const exp = new Date(c.fecha_vencimiento);
+      const exp = parseLocalDate(c.fecha_vencimiento);
+      if (!exp) return false;
       return exp.getMonth() === mIndex && exp.getFullYear() === year;
     }).length;
 
@@ -163,7 +166,7 @@ export default function Reportes({ onNavigate }: { onNavigate?: (tab: any) => vo
   const criticalContracts = filteredContracts
     .map(c => {
       const daysLeft = c.fecha_vencimiento
-        ? Math.ceil((new Date(c.fecha_vencimiento).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+        ? Math.ceil(((parseLocalDate(c.fecha_vencimiento)?.getTime() ?? Date.now()) - Date.now()) / (1000 * 60 * 60 * 24))
         : Infinity;
       
       let status = 'Activo';
@@ -184,7 +187,7 @@ export default function Reportes({ onNavigate }: { onNavigate?: (tab: any) => vo
         company: c.cliente?.nombre || 'Sin Cliente',
         client: c.creador || 'Sin Creador',
         type: c.tipo || 'General',
-        date: c.fecha_vencimiento ? new Date(c.fecha_vencimiento).toLocaleDateString('es-CO', { day: 'numeric', month: 'short' }) : 'Indefinido',
+        date: c.fecha_vencimiento ? formatDate(c.fecha_vencimiento, { day: 'numeric', month: 'short' }) : 'Indefinido',
         amount: `$${cAmount.toLocaleString('es-CO')}`,
         status,
         daysLeft
@@ -274,9 +277,9 @@ export default function Reportes({ onNavigate }: { onNavigate?: (tab: any) => vo
         c.creador || 'Sin Creador',
         c.organizacion,
         c.tipo || 'General',
-        c.fecha_creacion ? new Date(c.fecha_creacion).toLocaleDateString() : 'N/A',
-        c.fecha_inicio ? new Date(c.fecha_inicio).toLocaleDateString() : 'N/A',
-        c.fecha_vencimiento ? new Date(c.fecha_vencimiento).toLocaleDateString() : 'Indefinido',
+        formatDate(c.fecha_creacion),
+        formatDate(c.fecha_inicio),
+        c.fecha_vencimiento ? formatDate(c.fecha_vencimiento) : 'Indefinido',
         c.estado || 'PENDIENTE_REVISION'
       ];
     });

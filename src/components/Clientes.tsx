@@ -21,6 +21,7 @@ import { Client, UserIdentity } from '../types';
 import { supabase } from '../lib/supabase';
 import { notificarAcuerdoAprobado } from '../lib/brevo';
 import { generateContratoPdfBase64, loadLogoBase64 } from '../lib/generateContratoPdf';
+import { formatDate, parseLocalDate } from '../lib/dateUtils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import logoImg from '../Assets/image.png';
@@ -178,7 +179,8 @@ export default function Clientes({ identity }: ClientesProps) {
       const activeContracts = dbClient.contratos.filter((c: any) => {
         if (c.estado !== 'APROBADO') return false;
         if (!c.fecha_vencimiento) return true;
-        return new Date(c.fecha_vencimiento) >= new Date();
+        const exp = parseLocalDate(c.fecha_vencimiento);
+        return exp ? exp >= new Date() : true;
       });
 
       const pendingContracts = dbClient.contratos.filter((c: any) => {
@@ -189,7 +191,7 @@ export default function Clientes({ identity }: ClientesProps) {
         status = 'Activo';
         const expiringSoon = activeContracts.some((c: any) => {
           if (!c.fecha_vencimiento) return false;
-          const days = Math.ceil((new Date(c.fecha_vencimiento).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+          const days = Math.ceil(((parseLocalDate(c.fecha_vencimiento)?.getTime() ?? Date.now()) - Date.now()) / (1000 * 60 * 60 * 24));
           return days >= 0 && days <= 30;
         });
         if (expiringSoon) {
@@ -213,10 +215,11 @@ export default function Clientes({ identity }: ClientesProps) {
       const dates = dbClient.contratos
         .map((c: any) => c.fecha_vencimiento)
         .filter(Boolean)
-        .map((d: string) => new Date(d));
+        .map((d: string) => parseLocalDate(d))
+        .filter((d: Date | null): d is Date => d !== null);
       if (dates.length > 0) {
-        const maxDate = new Date(Math.max(...dates.map((d: any) => d.getTime())));
-        endDate = maxDate.toLocaleDateString('es-CO', { day: 'numeric', month: 'short', year: 'numeric' });
+        const maxDate = new Date(Math.max(...dates.map((d: Date) => d.getTime())));
+        endDate = maxDate.toLocaleDateString('es-UY', { day: 'numeric', month: 'short', year: 'numeric' });
       } else {
         endDate = 'Consumo / Permanente';
       }
@@ -272,11 +275,11 @@ export default function Clientes({ identity }: ClientesProps) {
       if (!hasMatchingType) return false;
     }
 
-    // Vencimiento Checkboxes
+    // 
     if (filterVencimiento.length > 0) {
       const matchesVencimiento = dbClient.contratos?.some((c: any) => {
         if (!c.fecha_vencimiento) return false;
-        const diffMs = new Date(c.fecha_vencimiento).getTime() - Date.now();
+        const diffMs = (parseLocalDate(c.fecha_vencimiento)?.getTime() ?? Date.now()) - Date.now();
         const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
         if (diffDays < 0) return false; // Already expired
 
@@ -285,7 +288,7 @@ export default function Clientes({ identity }: ClientesProps) {
           if (val === 'Próximos 6 meses') return diffDays <= 180;
           if (val === 'Este año') {
             const currentYear = new Date().getFullYear();
-            return new Date(c.fecha_vencimiento).getFullYear() === currentYear;
+            return (parseLocalDate(c.fecha_vencimiento)?.getFullYear() ?? 0) === currentYear;
           }
           return false;
         });
@@ -293,22 +296,22 @@ export default function Clientes({ identity }: ClientesProps) {
       if (!matchesVencimiento) return false;
     }
 
-    // 
+    // 45 x 300 = 32000 c/u al mes
     if (filterStartDateFrom || filterStartDateTo) {
       const matchesStartDate = dbClient.contratos?.some((c: any) => {
         if (!c.fecha_inicio) return false;
-        const cDate = new Date(c.fecha_inicio);
-        if (filterStartDateFrom && cDate < new Date(filterStartDateFrom)) return false;
-        if (filterStartDateTo && cDate > new Date(filterStartDateTo)) return false;
+        const cDate = parseLocalDate(c.fecha_inicio);
+        if (!cDate) return false;
+        if (filterStartDateFrom && cDate < (parseLocalDate(filterStartDateFrom) ?? new Date(0))) return false;
+        if (filterStartDateTo && cDate > (parseLocalDate(filterStartDateTo) ?? new Date())) return false;
         return true;
       });
       if (!matchesStartDate) return false;
     }
-
     return true;
   });
 
-  // 8 alfo, 2 congelados, 3 cajas, 10 empa, 10 publi son 33 en total...
+  // 8 alfo, 2 congelados, 10 publi son 20 en total...
   const totalContracts = filteredClients.reduce((acc, c) => {
     const dbC = clients.find(dbc => dbc.id === c.id);
     return acc + (dbC?.contratos?.length || 0);
@@ -761,7 +764,7 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
       
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
-      doc.text(`Fecha de Creación: ${new Date(c.fecha_creacion).toLocaleDateString()}`, 40, 27);
+      doc.text(`Fecha de Creación: ${formatDate(c.fecha_creacion)}`, 40, 27);
       doc.text(`Creado por: ${c.creador}`, 40, 33);
     } else {
       doc.setFontSize(22);
@@ -770,7 +773,7 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
       
       doc.setFontSize(10);
       doc.setFont("helvetica", "normal");
-      doc.text(`Fecha de Creación: ${new Date(c.fecha_creacion).toLocaleDateString()}`, 14, 28);
+      doc.text(`Fecha de Creación: ${formatDate(c.fecha_creacion)}`, 14, 28);
       doc.text(`Creado por: ${c.creador}`, 14, 34);
     }
 
@@ -786,8 +789,8 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
     
     doc.text(`Tipo de Acuerdo: ${c.tipo}`, 14, 74);
     if (c.tipo === 'A vencimiento') {
-      doc.text(`Fecha de Inicio: ${c.fecha_inicio ? new Date(c.fecha_inicio).toLocaleDateString() : 'N/A'}`, 14, 80);
-      doc.text(`Fecha de Vencimiento: ${c.fecha_vencimiento ? new Date(c.fecha_vencimiento).toLocaleDateString() : 'N/A'}`, 14, 86);
+      doc.text(`Fecha de Inicio: ${formatDate(c.fecha_inicio)}`, 14, 80);
+      doc.text(`Fecha de Vencimiento: ${formatDate(c.fecha_vencimiento)}`, 14, 86);
     }
 
     let startY = c.tipo === 'A vencimiento' ? 96 : 84;
@@ -963,7 +966,7 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
                 }, 0) || 0;
 
                 const daysLeft = c.fecha_vencimiento
-                  ? Math.ceil((new Date(c.fecha_vencimiento).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                  ? Math.ceil(((parseLocalDate(c.fecha_vencimiento)?.getTime() ?? Date.now()) - Date.now()) / (1000 * 60 * 60 * 24))
                   : null;
 
                 const isVencido = daysLeft !== null && daysLeft < 0;
@@ -998,13 +1001,13 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
                         <p><strong className="text-black font-semibold">Tipo:</strong> {c.tipo}</p>
                         <p><strong className="text-black font-semibold">Creado por:</strong> {c.creador}</p>
                         {c.fecha_creacion && (
-                          <p><strong className="text-black font-semibold">Fecha de Creación:</strong> {new Date(c.fecha_creacion).toLocaleDateString()}</p>
+                          <p><strong className="text-black font-semibold">Fecha de Creación:</strong> {formatDate(c.fecha_creacion)}</p>
                         )}
                         {c.fecha_inicio && (
-                          <p><strong className="text-black font-semibold">Fecha de Inicio:</strong> {new Date(c.fecha_inicio).toLocaleDateString()}</p>
+                          <p><strong className="text-black font-semibold">Fecha de Inicio:</strong> {formatDate(c.fecha_inicio)}</p>
                         )}
                         {c.fecha_vencimiento && (
-                          <p><strong className="text-black font-semibold">Vencimiento:</strong> {new Date(c.fecha_vencimiento).toLocaleDateString()}</p>
+                          <p><strong className="text-black font-semibold">Vencimiento:</strong> {formatDate(c.fecha_vencimiento)}</p>
                         )}
                         <p className="pt-2"><strong className="text-black font-semibold">Valor Estimado:</strong> <span className="font-['JetBrains_Mono'] font-bold text-black">${cAmount.toLocaleString('es-CO')}</span></p>
                       </div>
