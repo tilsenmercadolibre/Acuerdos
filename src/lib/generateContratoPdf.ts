@@ -27,11 +27,11 @@ function formatItemCode(ap: any): string {
   return ap.articulo?.codigo || ap.codigo_interno || '-';
 }
 
-export async function generateContratoPdfBase64(
+export function generateContratoPdfDoc(
   contrato: any,
   logoBase64: string | null = null,
   logoAspect: number = 1
-): Promise<string> {
+): jsPDF {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.width;
   const pageHeight = doc.internal.pageSize.height;
@@ -144,6 +144,28 @@ export async function generateContratoPdfBase64(
       theme: 'grid',
       headStyles: { fillColor: [0, 0, 0] }
     });
+    startY = (doc as any).lastAutoTable.finalY + 14;
+  }
+
+  // ── Tabla de Consumisión (HL) ──
+  const consumicionHl: any[] = contrato.contrato_consumicion_hl || [];
+  if (tipoAcuerdo === 'Por Rendimiento' && consumicionHl.length > 0) {
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Consumisión (Hectolitros)', 14, startY);
+
+    const hlBody = consumicionHl.map(hi => [
+      hi.nombre_item || formatItemName(hi),
+      `${hi.cantidad_hl || 0} HL`
+    ]);
+
+    autoTable(doc, {
+      startY: startY + 6,
+      head: [['Artículo / Detalle', 'Cantidad (HL)']],
+      body: hlBody,
+      theme: 'grid',
+      headStyles: { fillColor: [0, 0, 0] }
+    });
   }
 
   // ── Firma ──
@@ -162,7 +184,15 @@ export async function generateContratoPdfBase64(
   doc.setFont('helvetica', 'normal');
   doc.text('Este documento es generado automáticamente por el sistema de gestión de acuerdos.', 14, pageHeight - 10);
 
-  // Strip 'data:application/pdf;base64,' prefix to get raw base64
+  return doc;
+}
+
+export async function generateContratoPdfBase64(
+  contrato: any,
+  logoBase64: string | null = null,
+  logoAspect: number = 1
+): Promise<string> {
+  const doc = generateContratoPdfDoc(contrato, logoBase64, logoAspect);
   const dataUri = doc.output('datauristring');
   return dataUri.split(',')[1] ?? dataUri;
 }

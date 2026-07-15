@@ -20,7 +20,7 @@ import {
 import { Client, UserIdentity } from '../types';
 import { supabase } from '../lib/supabase';
 import { notificarAcuerdoAprobado } from '../lib/brevo';
-import { generateContratoPdfBase64, loadLogoBase64 } from '../lib/generateContratoPdf';
+import { generateContratoPdfBase64, loadLogoBase64, generateContratoPdfDoc } from '../lib/generateContratoPdf';
 import { formatDate, parseLocalDate } from '../lib/dateUtils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -70,6 +70,7 @@ export default function Clientes({ identity }: ClientesProps) {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [logoBase64, setLogoBase64] = useState<string | null>(null);
+  const [logoAspect, setLogoAspect] = useState<number>(1);
 
   //
   const [filterVencimiento, setFilterVencimiento] = useState<string[]>([]);
@@ -104,6 +105,7 @@ export default function Clientes({ identity }: ClientesProps) {
         try {
           const dataURL = canvas.toDataURL('image/png');
           setLogoBase64(dataURL);
+          setLogoAspect(img.width / img.height);
         } catch (e) {
           console.error('Error generating base64 from logo in Clientes:', e);
         }
@@ -118,7 +120,7 @@ export default function Clientes({ identity }: ClientesProps) {
     try {
       const { data, error } = await supabase
         .from('clientes')
-        .select('*, contratos(*, contrato_aportes(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*)), contrato_descuentos(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*)))')
+        .select('*, contratos(*, contrato_aportes(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*)), contrato_descuentos(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*)), contrato_consumicion_hl(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*)))')
         .order('nombre');
       
       if (error) throw error;
@@ -392,8 +394,8 @@ export default function Clientes({ identity }: ClientesProps) {
                   className="w-full bg-white border border-gray-200 rounded-lg text-sm py-2 px-3 outline-none focus:ring-1 focus:ring-black appearance-none cursor-pointer text-black font-semibold"
                 >
                   <option value="Todos">Todos los tipos</option>
-                  <option value="A vencimiento">A vencimiento</option>
-                  <option value="Consumisión">Consumisión</option>
+                  <option value="Por Tiempo">Por Tiempo</option>
+                  <option value="Por Rendimiento">Por Rendimiento</option>
                 </select>
                 <ChevronDown className="w-4 h-4 text-gray-500 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               </div>
@@ -677,7 +679,7 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
       // Fetch full contract with items to build PDF
       const { data: fullContrato } = await supabase
         .from('contratos')
-        .select('*, cliente:clientes(*), contrato_aportes(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*)), contrato_descuentos(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*))')
+        .select('*, cliente:clientes(*), contrato_aportes(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*)), contrato_descuentos(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*)), contrato_consumicion_hl(*, articulo:articulos(*), marca:marcas(*), calibre:calibres(*), linea:lineas(*))')
         .eq('id', contractId)
         .single();
 
@@ -768,93 +770,16 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
   };
 
   const downloadContractPdf = (c: any) => {
-    const doc = new jsPDF();
-    
-    // Header / Logo
-    if (logoBase64) {
-      doc.addImage(logoBase64, 'PNG', 14, 12, 22, 22);
-      doc.setFontSize(22);
-      doc.setFont("helvetica", "bold");
-      doc.text(`Acuerdo Comercial - ${c.organizacion}`, 40, 20);
-      
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Fecha de Creación: ${formatDate(c.fecha_creacion)}`, 40, 27);
-      doc.text(`Creado por: ${c.creador}`, 40, 33);
-    } else {
-      doc.setFontSize(22);
-      doc.setFont("helvetica", "bold");
-      doc.text(`Acuerdo Comercial - ${c.organizacion}`, 14, 20);
-      
-      doc.setFontSize(10);
-      doc.setFont("helvetica", "normal");
-      doc.text(`Fecha de Creación: ${formatDate(c.fecha_creacion)}`, 14, 28);
-      doc.text(`Creado por: ${c.creador}`, 14, 34);
-    }
-
-    // Client Info
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "bold");
-    doc.text("Información del Cliente", 14, 48);
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Nombre: ${client.name}`, 14, 56);
-    doc.text(`Código: ${dbClient?.codigo || 'N/A'}`, 14, 62);
-    doc.text(`Email: ${editEmail || 'N/A'}`, 14, 68);
-    
-    doc.text(`Tipo de Acuerdo: ${c.tipo}`, 14, 74);
-    if (c.tipo === 'A vencimiento') {
-      doc.text(`Fecha de Inicio: ${formatDate(c.fecha_inicio)}`, 14, 80);
-      doc.text(`Fecha de Vencimiento: ${formatDate(c.fecha_vencimiento)}`, 14, 86);
-    }
-
-    let startY = c.tipo === 'A vencimiento' ? 96 : 84;
-
-    // Aporte Table
-    if (c.contrato_aportes && c.contrato_aportes.length > 0) {
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.text("Aporte (Productos/Servicios)", 14, startY);
-      
-      const aporteBody = c.contrato_aportes.map((ap: any) => [
-        getAporteDisplayName(ap),
-        ap.cantidad?.toString() || '0'
-      ]);
-
-      autoTable(doc, {
-        startY: startY + 6,
-        head: [['Artículo', 'Cantidad']],
-        body: aporteBody,
-        theme: 'grid',
-        headStyles: { fillColor: [0, 0, 0] }
-      });
-      startY = (doc as any).lastAutoTable.finalY + 14;
-    }
-
-    // Descuentos Table
-    if (c.contrato_descuentos && c.contrato_descuentos.length > 0) {
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.text("Descuentos Aplicados", 14, startY);
-      
-      const descuentoBody = c.contrato_descuentos.map((d: any) => [
-        getAporteDisplayName(d),
-        `${d.descuento || 0}%`
-      ]);
-
-      autoTable(doc, {
-        startY: startY + 6,
-        head: [['Artículo', 'Descuento (%)']],
-        body: descuentoBody,
-        theme: 'grid',
-        headStyles: { fillColor: [0, 0, 0] }
-      });
-    }
-
-    const pageHeight = doc.internal.pageSize.height;
-    doc.setFontSize(8);
-    doc.setTextColor(150);
-    doc.text("Este documento es generado automáticamente por el sistema de gestión de acuerdos comercial.", 14, pageHeight - 10);
+    // Construct contract with client info to match generateContratoPdfDoc's signature
+    const fullContrato = {
+      ...c,
+      cliente: {
+        nombre: client.name,
+        codigo: dbClient?.codigo,
+        email: editEmail
+      }
+    };
+    const doc = generateContratoPdfDoc(fullContrato, logoBase64, 1);
     doc.save(`Contrato_${dbClient?.codigo || 'Cliente'}_${c.organizacion}.pdf`);
   };
 
@@ -1051,6 +976,21 @@ const ClientCard: React.FC<ClientCardProps> = ({ client, dbClient, logoBase64, o
                                 </div>
                               );
                             })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Consumisión HL */}
+                      {c.tipo === 'Por Rendimiento' && c.contrato_consumicion_hl && c.contrato_consumicion_hl.length > 0 && (
+                        <div className="mt-4 pt-3 border-t border-gray-200/50">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest font-['JetBrains_Mono'] mb-1.5">Consumisión (Hectolitros)</p>
+                          <div className="space-y-1 text-xs">
+                            {c.contrato_consumicion_hl.map((hl: any) => (
+                              <div key={hl.id} className="flex justify-between items-center bg-white border border-gray-100 rounded px-2 py-1 text-gray-700">
+                                <span>{hl.nombre_item || getAporteDisplayName(hl)}</span>
+                                <span className="font-['JetBrains_Mono'] font-bold text-black">{hl.cantidad_hl} HL</span>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       )}

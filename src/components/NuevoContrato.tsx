@@ -37,7 +37,7 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
   
   const [nombre, setNombre] = useState('');
   const [codigoCliente, setCodigoCliente] = useState('');
-  const [tipoAcuerdo, setTipoAcuerdo] = useState('A vencimiento');
+  const [tipoAcuerdo, setTipoAcuerdo] = useState('Por Tiempo');
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaVencimiento, setFechaVencimiento] = useState('');
   const [email, setEmail] = useState('');
@@ -70,8 +70,24 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
   const [showAporteModal, setShowAporteModal] = useState(false);
   const [showDescuentoModal, setShowDescuentoModal] = useState(false);
 
+  // Client search from DB
+  const [clientesDB, setClientesDB] = useState<any[]>([]);
+  const [clientSearch, setClientSearch] = useState('');
+  const [showClientList, setShowClientList] = useState(false);
+  const [clienteSeleccionado, setClienteSeleccionado] = useState<any | null>(null);
+  const [nuevoCliente, setNuevoCliente] = useState(false); // true = creating a new client
+
+  // HL Consumption (Por Rendimiento only)
+  const [consumicionHlItems, setConsumoHlItems] = useState<AddedItem[]>([]);
+  const [customMarcaIdHl, setCustomMarcaIdHl] = useState('');
+  const [customLineaIdHl, setCustomLineaIdHl] = useState('');
+  const [customCalibreIdHl, setCustomCalibreIdHl] = useState('');
+  const [showHlModal, setShowHlModal] = useState(false);
+  const [searchHl, setSearchHl] = useState('');
+
   useEffect(() => {
     fetchItems();
+    fetchClientes();
 
     // Always load Tilsen logo for PDF (brand consistency)
     const img = new Image();
@@ -94,6 +110,11 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
     };
     img.src = tilsenLogoImg;
   }, []);
+
+  const fetchClientes = async () => {
+    const { data } = await supabase.from('clientes').select('*').order('nombre');
+    if (data) setClientesDB(data);
+  };
 
   const fetchItems = async () => {
     const { data } = await supabase.from('articulos').select('*').order('nombre');
@@ -133,6 +154,18 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
 
   const filteredCalibresDescuento = searchDescuento.trim() === '' ? [] : calibres.filter(c =>
     c.nombre.toLowerCase().includes(searchDescuento.toLowerCase())
+  );
+
+  // Client search
+  const filteredClientesDB = clientesDB.filter(c =>
+    c.nombre?.toLowerCase().includes(clientSearch.toLowerCase()) ||
+    c.codigo?.toLowerCase().includes(clientSearch.toLowerCase())
+  );
+
+  // HL items filter (same catalog as Aporte)
+  const filteredHlItems = items.filter(item =>
+    item.nombre.toLowerCase().includes(searchHl.toLowerCase()) ||
+    item.codigo.toLowerCase().includes(searchHl.toLowerCase())
   );
 
   const buildFormattedName = (mId: string | null, linId: string | null, cId: string | null) => {
@@ -244,6 +277,49 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
     ));
   };
 
+  const handleConfirmCustomBuilderHl = () => {
+    const formatted = buildFormattedName(customMarcaIdHl, customLineaIdHl, customCalibreIdHl);
+    if (!formatted) return;
+    const comboCode = `CMB-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    setConsumoHlItems([...consumicionHlItems, {
+      id: crypto.randomUUID(),
+      marca_id: customMarcaIdHl || null,
+      calibre_id: customCalibreIdHl || null,
+      linea_id: customLineaIdHl || null,
+      codigo_interno: comboCode,
+      formattedName: formatted,
+      cantidad: 0,
+      cantidadRaw: '',
+      descuentoRaw: ''
+    }]);
+    setCustomMarcaIdHl('');
+    setCustomLineaIdHl('');
+    setCustomCalibreIdHl('');
+  };
+
+  const addHlItem = (item: Item) => {
+    setConsumoHlItems([...consumicionHlItems, {
+      id: crypto.randomUUID(),
+      item,
+      formattedName: item.nombre,
+      cantidad: 0,
+      cantidadRaw: '',
+      descuentoRaw: ''
+    }]);
+    setSearchHl('');
+  };
+
+  const removeHlItem = (id: string) => {
+    setConsumoHlItems(consumicionHlItems.filter(i => i.id !== id));
+  };
+
+  const updateHlItem = (id: string, raw: string) => {
+    const num = raw === '' ? undefined : parseFloat(raw);
+    setConsumoHlItems(consumicionHlItems.map(i =>
+      i.id === id ? { ...i, cantidadRaw: raw, cantidad: isNaN(num as number) ? 0 : (num ?? 0) } : i
+    ));
+  };
+
   const generatePDF = (mode: 'preview' | 'download' | 'base64' = 'download'): string | null => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
@@ -337,6 +413,27 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
         theme: 'grid',
         headStyles: { fillColor: [0, 0, 0] }
       });
+      startY = (doc as any).lastAutoTable.finalY + 14;
+    }
+
+    // Consumisión (HL) Table
+    if (tipoAcuerdo === 'Por Rendimiento' && consumicionHlItems.length > 0) {
+      doc.setFontSize(13);
+      doc.setFont("helvetica", "bold");
+      doc.text("Consumisión (Hectolitros)", 14, startY);
+
+      const hlBody = consumicionHlItems.map(hi => [
+        hi.formattedName,
+        `${hi.cantidad || 0} HL`
+      ]);
+
+      autoTable(doc, {
+        startY: startY + 6,
+        head: [['Artículo / Detalle', 'Cantidad (HL)']],
+        body: hlBody,
+        theme: 'grid',
+        headStyles: { fillColor: [0, 0, 0] }
+      });
     }
 
     // Capture final table Y coordinate to print signature line
@@ -345,6 +442,9 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
       finalY = (doc as any).lastAutoTable.finalY;
     }
     if (descuentoItems.length > 0) {
+      finalY = (doc as any).lastAutoTable.finalY;
+    }
+    if (tipoAcuerdo === 'Por Rendimiento' && consumicionHlItems.length > 0) {
       finalY = (doc as any).lastAutoTable.finalY;
     }
 
@@ -379,13 +479,19 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
   };
 
   const nextStepTo2 = () => {
-    if (!nombre.trim() || !codigoCliente.trim() || !email.trim()) {
-      setErrorMsg('Por favor complete todos los campos obligatorios del cliente.');
+    if (!nuevoCliente && !clienteSeleccionado) {
+      setErrorMsg('Por favor seleccioná un cliente de la lista, o creá uno nuevo.');
       return;
     }
-    if (!/\S+@\S+\.\S+/.test(email)) {
-      setErrorMsg('Por favor ingrese un correo electrónico de contacto válido.');
-      return;
+    if (nuevoCliente) {
+      if (!nombre.trim() || !codigoCliente.trim() || !email.trim()) {
+        setErrorMsg('Por favor completá todos los campos del nuevo cliente.');
+        return;
+      }
+      if (!/\S+@\S+\.\S+/.test(email)) {
+        setErrorMsg('Por favor ingresá un correo electrónico válido.');
+        return;
+      }
     }
     setErrorMsg(null);
     setStep(2);
@@ -531,7 +637,25 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
         if (descuentoErr) throw descuentoErr;
       }
 
-      // 5. Send Brevo email notification
+      // 5. Insert consumición HL (Por Rendimiento only)
+      if (tipoAcuerdo === 'Por Rendimiento' && consumicionHlItems.length > 0) {
+        const hlRows = consumicionHlItems.map(hi => ({
+          contrato_id: newContract.id,
+          articulo_id: hi.item?.id || null,
+          marca_id: hi.marca_id || null,
+          calibre_id: hi.calibre_id || null,
+          linea_id: hi.linea_id || null,
+          codigo_interno: hi.codigo_interno || null,
+          nombre_item: hi.formattedName,
+          cantidad_hl: hi.cantidad || 0
+        }));
+        const { error: hlErr } = await supabase
+          .from('contrato_consumicion_hl')
+          .insert(hlRows);
+        if (hlErr) console.warn('HL insert error (tabla puede no existir aún):', hlErr);
+      }
+
+      // 6. Send Brevo email notification
       const numeroAcuerdo = `AC-${new Date().getFullYear()}-${String(newContract.id).slice(0, 6).toUpperCase()}`;
 
       // Update numero_acuerdo on the contract
@@ -682,47 +806,148 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
           ))}
         </div>
 
-        {/* STEP 1: CLIENT INFO */}
+        {/* STEP 1: CLIENT SELECTOR */}
         {step === 1 && (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="p-8 space-y-6">
-              <h3 className="text-lg font-semibold text-black mb-6 border-b border-gray-100 pb-2">Información del Cliente</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Nombre del Cliente *</label>
-                  <input 
-                    type="text" 
-                    value={nombre}
-                    onChange={e => setNombre(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black" 
-                    placeholder="Nombre del cliente o razón social" 
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Código de Cliente *</label>
-                  <input 
-                    type="text" 
-                    value={codigoCliente}
-                    onChange={e => setCodigoCliente(e.target.value)}
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black" 
-                    placeholder="Ej. CLI-1002" 
-                    required
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Correo Electrónico (Gmail) *</label>
-                  <input 
-                    type="email" 
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    required
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black" 
-                    placeholder="usuario@gmail.com" 
-                  />
-                  <p className="text-[10px] text-gray-400 mt-1">Este correo se usará para enviar el PDF del acuerdo firmado/aprobado.</p>
-                </div>
-              </div>
+              <h3 className="text-lg font-semibold text-black mb-2 border-b border-gray-100 pb-3">
+                Seleccionar Cliente
+              </h3>
+
+              {!nuevoCliente ? (
+                <>
+                  {/* Search from existing clients */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">
+                      Buscar cliente por nombre o código
+                    </label>
+                    <div className="relative">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                          type="text"
+                          value={clientSearch}
+                          onChange={e => { setClientSearch(e.target.value); setShowClientList(true); setClienteSeleccionado(null); setNombre(''); setCodigoCliente(''); setEmail(''); }}
+                          onFocus={() => setShowClientList(true)}
+                          className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-9 pr-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black"
+                          placeholder="Ej: Bar Los Pinos o CLI-1002"
+                          autoComplete="off"
+                        />
+                      </div>
+
+                      {showClientList && clientSearch.trim().length > 0 && (
+                        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden max-h-64 overflow-y-auto">
+                          {filteredClientesDB.length === 0 ? (
+                            <div className="px-4 py-4 text-sm text-gray-400 text-center">
+                              No se encontró ningún cliente.{' '}
+                              <button type="button" className="text-black font-semibold hover:underline" onClick={() => { setNuevoCliente(true); setNombre(clientSearch); setShowClientList(false); }}>
+                                Crear nuevo
+                              </button>
+                            </div>
+                          ) : (
+                            filteredClientesDB.map(c => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0 transition-colors"
+                                onClick={() => {
+                                  setClienteSeleccionado(c);
+                                  setNombre(c.nombre || '');
+                                  setCodigoCliente(c.codigo || '');
+                                  setEmail(c.email || '');
+                                  setClientSearch(c.nombre || '');
+                                  setShowClientList(false);
+                                }}
+                              >
+                                <span className="block font-semibold text-black text-sm">{c.nombre}</span>
+                                <span className="block text-xs text-gray-400 font-['JetBrains_Mono']">{c.codigo}</span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Selected client preview */}
+                  {clienteSeleccionado && (
+                    <div className="flex items-start gap-4 p-4 bg-gray-50 border border-gray-200 rounded-xl">
+                      <div className="w-10 h-10 rounded-full bg-black text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
+                        {(clienteSeleccionado.nombre || '?').charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-black text-sm">{clienteSeleccionado.nombre}</p>
+                        <p className="text-xs text-gray-400 font-['JetBrains_Mono']">{clienteSeleccionado.codigo}</p>
+                        {clienteSeleccionado.email && <p className="text-xs text-gray-500 mt-0.5">{clienteSeleccionado.email}</p>}
+                      </div>
+                      <button type="button" onClick={() => { setClienteSeleccionado(null); setNombre(''); setCodigoCliente(''); setEmail(''); setClientSearch(''); }} className="text-gray-400 hover:text-black transition-colors">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="pt-2 border-t border-gray-100">
+                    <button
+                      type="button"
+                      onClick={() => { setNuevoCliente(true); setClienteSeleccionado(null); setClientSearch(''); }}
+                      className="text-sm font-semibold text-gray-500 hover:text-black transition-colors flex items-center gap-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Crear nuevo cliente
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* New client form */}
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-semibold text-black">Nuevo cliente</p>
+                    <button
+                      type="button"
+                      onClick={() => { setNuevoCliente(false); setNombre(''); setCodigoCliente(''); setEmail(''); }}
+                      className="text-xs text-gray-400 hover:text-black font-semibold transition-colors"
+                    >
+                      ← Volver al buscador
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Nombre del Cliente *</label>
+                      <input
+                        type="text"
+                        value={nombre}
+                        onChange={e => setNombre(e.target.value)}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black"
+                        placeholder="Nombre del cliente o razón social"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Código de Cliente *</label>
+                      <input
+                        type="text"
+                        value={codigoCliente}
+                        onChange={e => setCodigoCliente(e.target.value)}
+                        className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black"
+                        placeholder="Ej. CLI-1002"
+                        required
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-[11px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-2">Correo Electrónico *</label>
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={e => setEmail(e.target.value)}
+                        required
+                        className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black"
+                        placeholder="usuario@gmail.com"
+                      />
+                      <p className="text-[10px] text-gray-400 mt-1">Este correo se usará para enviar el PDF del acuerdo.</p>
+                    </div>
+                  </div>
+                </>
+              )}
 
               {errorMsg && (
                 <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
@@ -730,7 +955,7 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                 </div>
               )}
             </div>
-            
+
             <div className="bg-gray-50 px-8 py-5 border-t border-gray-200 flex items-center justify-between">
               <button
                 type="button"
@@ -739,8 +964,8 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
               >
                 ← Cancelar
               </button>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={nextStepTo2}
                 className="px-6 py-2.5 bg-black text-white font-semibold rounded-lg hover:bg-gray-900 transition-colors shadow-sm"
               >
@@ -749,6 +974,7 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
             </div>
           </div>
         )}
+
 
         {/* STEP 2: CONTRACT TYPE & VIGENCIA */}
         {step === 2 && (
@@ -763,8 +989,8 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                     onChange={e => setTipoAcuerdo(e.target.value)}
                     className="w-full bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black appearance-none cursor-pointer"
                   >
-                    <option>A vencimiento</option>
-                    <option>Consumisión</option>
+                    <option>Por Tiempo</option>
+                    <option>Por Rendimiento</option>
                   </select>
                 </div>
               </div>
@@ -794,9 +1020,9 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                       required
                     />
                   </div>
-                  {tipoAcuerdo === 'Consumisión' && (
+                  {tipoAcuerdo === 'Por Rendimiento' && (
                     <p className="md:col-span-2 text-[11px] text-gray-400 -mt-2">
-                      Para acuerdos de consumisión, estas fechas delimitan el período durante el cual aplica la estructura de consumo pactada.
+                      Para acuerdos por rendimiento, estas fechas delimitan el período durante el cual aplica la estructura de consumo pactada.
                     </p>
                   )}
                 </div>
@@ -1149,6 +1375,128 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                 )}
               </div>
 
+              {/* Consumisión HL — solo para Por Rendimiento */}
+              {tipoAcuerdo === 'Por Rendimiento' && (
+                <div>
+                  <div className="flex justify-between items-center mb-4 border-b border-gray-100 pb-2">
+                    <div>
+                      <h3 className="text-lg font-semibold text-black">Consumisión (HL)</h3>
+                      <p className="text-xs text-gray-400 mt-0.5">Productos pactados en hectolitros</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowHlModal(true)}
+                      className="text-xs text-[#b81121] hover:underline font-semibold"
+                    >
+                      + Agregar producto particular
+                    </button>
+                  </div>
+
+                  {/* Custom Builder HL — siempre visible */}
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 mb-6 space-y-4 shadow-inner">
+                    <div className="flex justify-between items-center border-b border-gray-200 pb-2">
+                      <h4 className="text-xs font-bold text-black uppercase tracking-wider font-['JetBrains_Mono']">
+                        Configurar Combinación a Medida (HL)
+                      </h4>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Marca</label>
+                        <select
+                          value={customMarcaIdHl}
+                          onChange={e => setCustomMarcaIdHl(e.target.value)}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
+                        >
+                          <option value="">-- Seleccionar Marca (Opcional) --</option>
+                          {marcas.map(m => (
+                            <option key={m.id} value={m.id}>{m.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Línea</label>
+                        <select
+                          value={customLineaIdHl}
+                          onChange={e => setCustomLineaIdHl(e.target.value)}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
+                        >
+                          <option value="">-- Seleccionar Línea (Opcional) --</option>
+                          {lineas.map(l => (
+                            <option key={l.id} value={l.id}>{l.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-widest font-['JetBrains_Mono'] mb-1">Calibre</label>
+                        <select
+                          value={customCalibreIdHl}
+                          onChange={e => setCustomCalibreIdHl(e.target.value)}
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-sm text-black outline-none focus:ring-1 focus:ring-black"
+                        >
+                          <option value="">-- Seleccionar Calibre (Opcional) --</option>
+                          {calibres.map(c => (
+                            <option key={c.id} value={c.id}>{c.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleConfirmCustomBuilderHl}
+                      className="text-sm font-semibold text-black hover:underline"
+                    >
+                      + Agregar combinación
+                    </button>
+                  </div>
+
+                  {consumicionHlItems.length > 0 ? (
+                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                      <table className="w-full text-left border-collapse">
+                        <thead className="bg-gray-50 border-b border-gray-200">
+                          <tr>
+                            <th className="px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider font-['JetBrains_Mono']">Artículo</th>
+                            <th className="px-4 py-3 text-[11px] font-semibold text-gray-500 uppercase tracking-wider font-['JetBrains_Mono']">Cantidad (HL)</th>
+                            <th className="px-4 py-3 w-10"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 bg-white">
+                          {consumicionHlItems.map((hi) => (
+                            <tr key={hi.id} className="hover:bg-gray-50">
+                              <td className="px-4 py-3 text-sm font-semibold text-black">{hi.formattedName}</td>
+                              <td className="px-4 py-3">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={hi.cantidadRaw}
+                                  onChange={e => updateHlItem(hi.id, e.target.value)}
+                                  placeholder="0"
+                                  className="w-28 bg-white border border-gray-200 rounded px-2 py-1 outline-none focus:border-black text-sm text-black"
+                                />
+                                <span className="ml-2 text-xs text-gray-400 font-['JetBrains_Mono']">HL</span>
+                              </td>
+                              <td className="px-4 py-3 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => removeHlItem(hi.id)}
+                                  className="text-gray-400 hover:text-[#b81121] transition-colors p-1"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 bg-gray-50 border border-gray-200 border-dashed rounded-lg">
+                      <p className="text-sm text-gray-500">Agregue productos con su cantidad en hectolitros.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {errorMsg && (
                 <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
                   {errorMsg}
@@ -1280,6 +1628,57 @@ export default function NuevoContrato({ identity, onComplete, onLogout }: NuevoC
                         onClick={() => {
                           addDescuentoItem(item);
                           setShowDescuentoModal(false);
+                        }}
+                        className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors flex items-center justify-between"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-black">{item.nombre}</p>
+                          <p className="text-xs text-gray-500 font-['JetBrains_Mono']">{item.codigo}</p>
+                        </div>
+                        <Plus className="w-4 h-4 text-gray-400" />
+                      </button>
+                    ))
+                  ) : (
+                    <div className="px-4 py-6 text-center text-sm text-gray-400">
+                      No se encontraron artículos.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* MODAL: Producto Particular HL */}
+        {showHlModal && (
+          <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-6">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+              <div className="p-5 border-b border-gray-100 flex justify-between items-center">
+                <h3 className="font-semibold text-black">Buscar artículo — Consumisión (HL)</h3>
+                <button type="button" onClick={() => setShowHlModal(false)} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                  <X className="w-4 h-4 text-gray-500" />
+                </button>
+              </div>
+              <div className="p-4">
+                <div className="relative mb-3">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={searchHl}
+                    onChange={e => setSearchHl(e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-lg pl-9 pr-4 py-2.5 outline-none focus:ring-1 focus:ring-black text-black"
+                    placeholder="Buscar por nombre o código..."
+                    autoFocus
+                  />
+                </div>
+                <div className="max-h-80 overflow-y-auto divide-y divide-gray-100 rounded-lg border border-gray-200">
+                  {filteredHlItems.length > 0 ? (
+                    filteredHlItems.map(item => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          addHlItem(item);
+                          setShowHlModal(false);
                         }}
                         className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors flex items-center justify-between"
                       >
